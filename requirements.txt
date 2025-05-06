@@ -1,0 +1,16 @@
+flask
+flask-cors
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+pyecharts
+flask-restful
+joblib
+openpyxl
+xlsxwriter
+python-docx
+reportlab
+transformers
+torch
