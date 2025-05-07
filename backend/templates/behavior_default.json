@@ -1,0 +1,25 @@
+{
+  "id": "behavior_default",
+  "name": "学习行为分析报告模板",
+  "type": "behavior",
+  "created_at": "2025-05-07T10:48:08.053289",
+  "sections": [
+    {
+      "title": "答题时间分布",
+      "type": "chart",
+      "chart_type": "bar",
+      "data_source": "peak_hours"
+    },
+    {
+      "title": "答题状态分布",
+      "type": "chart",
+      "chart_type": "pie",
+      "data_source": "state_distribution"
+    },
+    {
+      "title": "学习行为模式分析",
+      "type": "text",
+      "data_source": "behavior_patterns"
+    }
+  ]
+}

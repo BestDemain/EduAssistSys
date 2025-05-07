@@ -39,6 +39,10 @@ class AnalysisService:
         
         # 合并提交记录和题目信息
         merged_data = pd.merge(submissions, questions, on='title_ID', how='left')
+
+        # 处理缺失值
+        merged_data.fillna({'knowledge': '未知'}, inplace=True)
+        merged_data.fillna({'sub_knowledge': '未知'}, inplace=True)
         
         # 计算每个知识点的掌握程度
         knowledge_mastery = {}
@@ -60,7 +64,10 @@ class AnalysisService:
             correct_submission_rate = correct_submissions / total_submissions if total_submissions > 0 else 0
             
             # 计算平均用时
-            group['timeconsume'] = pd.to_numeric(group['timeconsume'], errors='coerce')
+            group = group.copy()  # 创建副本以避免SettingWithCopyWarning
+            # 处理异常值，如"--"或"-"等非数值
+            group.loc[:, 'timeconsume'] = group['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+            group.loc[:, 'timeconsume'] = pd.to_numeric(group['timeconsume'], errors='coerce')
             avg_time_consume = group['timeconsume'].mean()
             
             # 存储该知识点的掌握情况
@@ -85,6 +92,10 @@ class AnalysisService:
                 sub_correct_submissions = len(sub_group[sub_group['state'] == 'Absolutely_Correct'])
                 sub_correct_submission_rate = sub_correct_submissions / sub_total_submissions if sub_total_submissions > 0 else 0
                 
+                # 处理异常值，如"--"或"-"等非数值
+                sub_group = sub_group.copy()  # 创建副本以避免SettingWithCopyWarning
+                sub_group.loc[:, 'timeconsume'] = sub_group['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+                sub_group.loc[:, 'timeconsume'] = pd.to_numeric(sub_group['timeconsume'], errors='coerce')
                 sub_avg_time_consume = sub_group['timeconsume'].mean()
                 
                 sub_knowledge_mastery[sub_knowledge] = {
@@ -157,12 +168,13 @@ class AnalysisService:
             student_info = None
         
         # 转换时间戳为datetime对象
-        submissions['datetime'] = pd.to_datetime(submissions['time'], unit='s')
+        submissions = submissions.copy()  # 创建副本以避免SettingWithCopyWarning
+        submissions.loc[:, 'datetime'] = pd.to_datetime(submissions['time'], unit='s')
         
         # 提取时间特征
-        submissions['hour'] = submissions['datetime'].dt.hour
-        submissions['day'] = submissions['datetime'].dt.day
-        submissions['weekday'] = submissions['datetime'].dt.weekday
+        submissions.loc[:, 'hour'] = submissions['datetime'].dt.hour
+        submissions.loc[:, 'day'] = submissions['datetime'].dt.day
+        submissions.loc[:, 'weekday'] = submissions['datetime'].dt.weekday
         
         # 分析答题高峰时段
         hour_counts = submissions.groupby('hour').size().reset_index(name='count')
@@ -177,7 +189,9 @@ class AnalysisService:
         correct_rate = len(correct_submissions) / len(submissions) if len(submissions) > 0 else 0
         
         # 分析平均答题时间
-        submissions['timeconsume'] = pd.to_numeric(submissions['timeconsume'], errors='coerce')
+        # 处理异常值，如"--"或"-"等非数值
+        submissions.loc[:, 'timeconsume'] = submissions['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+        submissions.loc[:, 'timeconsume'] = pd.to_numeric(submissions['timeconsume'], errors='coerce')
         avg_time_consume = submissions['timeconsume'].mean()
         
         # 分析内存使用情况
@@ -202,7 +216,12 @@ class AnalysisService:
         if student_id:
             # 获取所有学生的数据进行对比
             all_students_correct_rate = len(all_submissions[all_submissions['state'] == 'Absolutely_Correct']) / len(all_submissions)
-            all_students_avg_time = all_submissions['timeconsume'].mean()
+            
+            # 处理所有学生的timeconsume数据中的异常值
+            all_submissions_copy = all_submissions.copy()
+            all_submissions_copy.loc[:, 'timeconsume'] = all_submissions_copy['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+            all_submissions_copy.loc[:, 'timeconsume'] = pd.to_numeric(all_submissions_copy['timeconsume'], errors='coerce')
+            all_students_avg_time = all_submissions_copy['timeconsume'].mean()
             
             # 计算相对表现
             behavior_profile['relative_performance'] = {
@@ -251,7 +270,10 @@ class AnalysisService:
             correct_rate = correct_submissions / total_submissions if total_submissions > 0 else 0
             
             # 计算平均用时和平均内存使用
-            avg_time_consume = group['timeconsume'].mean()
+            group_copy = group.copy()
+            group_copy.loc[:, 'timeconsume'] = group_copy['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+            group_copy.loc[:, 'timeconsume'] = pd.to_numeric(group_copy['timeconsume'], errors='coerce')
+            avg_time_consume = group_copy['timeconsume'].mean()
             avg_memory = group[group['memory'] > 0]['memory'].mean()
             
             # 获取题目分数和知识点

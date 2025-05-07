@@ -1,0 +1,24 @@
+{
+  "id": "difficulty_default",
+  "name": "题目难度分析报告模板",
+  "type": "difficulty",
+  "created_at": "2025-05-07T10:48:08.053289",
+  "sections": [
+    {
+      "title": "题目难度分布",
+      "type": "chart",
+      "chart_type": "histogram",
+      "data_source": "difficulty_distribution"
+    },
+    {
+      "title": "难度异常题目分析",
+      "type": "table",
+      "data_source": "abnormal_questions"
+    },
+    {
+      "title": "难度建议",
+      "type": "text",
+      "data_source": "difficulty_suggestions"
+    }
+  ]
+}

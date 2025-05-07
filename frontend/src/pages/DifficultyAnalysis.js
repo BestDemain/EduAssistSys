@@ -322,23 +322,15 @@ const DifficultyAnalysis = () => {
         <Spin tip="分析中..." size="large" style={{ display: 'flex', justifyContent: 'center', marginTop: '100px' }} />
       ) : difficultyData ? (
         <>
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Card className="chart-card" title="题目难度散点图">
-                <ReactECharts
-                  option={getDifficultyScatterOption()}
-                  style={{ height: '100%', width: '100%' }}
-                  className="chart-container"
-                />
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <Card title="题目难度散点图">
+                <ReactECharts option={getDifficultyScatterOption()} style={{ height: 400, width: '100%' }} />
               </Card>
             </Col>
-            <Col xs={24} md={12}>
-              <Card className="chart-card" title="知识点难度分布">
-                <ReactECharts
-                  option={getKnowledgeDifficultyOption()}
-                  style={{ height: '100%', width: '100%' }}
-                  className="chart-container"
-                />
+            <Col span={12}>
+              <Card title="知识点难度分布">
+                <ReactECharts option={getKnowledgeDifficultyOption()} style={{ height: 400, width: '100%' }} />
               </Card>
             </Col>
           </Row>

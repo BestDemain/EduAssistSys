@@ -44,7 +44,7 @@ function App() {
               </Routes>
             </Content>
             <Footer style={{ textAlign: 'center' }}>
-              教育辅助可视分析系统 ©{new Date().getFullYear()} 智学发展革新小组
+              教育辅助可视分析系统 ©{new Date().getFullYear()} 可视化项目小组
             </Footer>
           </Layout>
         </Layout>

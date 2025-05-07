@@ -10,6 +10,7 @@ from services.data_service import DataService
 from services.analysis_service import AnalysisService
 from services.report_service import ReportService
 from services.nlp_service import NLPService
+from services.templates import TemplateService
 
 app = Flask(__name__)
 CORS(app)  # 启用跨域请求支持
@@ -19,6 +20,7 @@ data_service = DataService()
 analysis_service = AnalysisService()
 report_service = ReportService()
 nlp_service = NLPService()
+template_service = TemplateService()
 
 # 根路由
 @app.route('/')
@@ -66,6 +68,20 @@ def analyze_behavior():
 @app.route('/api/analysis/difficulty', methods=['GET'])
 def analyze_difficulty():
     result = analysis_service.analyze_question_difficulty()
+    # 递归转换 numpy.int64 为 int
+    def convert_np(obj):
+        import numpy as np
+        if isinstance(obj, dict):
+            return {k: convert_np(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_np(i) for i in obj]
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        else:
+            return obj
+    result = convert_np(result)
     return jsonify(result)
 
 # 生成报告
@@ -95,6 +111,43 @@ def download_report(filename):
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
     return send_file(os.path.join(report_dir, filename), as_attachment=True)
 
+# 预览报告
+@app.route('/api/report/preview/<path:filename>', methods=['GET'])
+def preview_report(filename):
+    report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+    file_path = os.path.join(report_dir, filename)
+    # 强制返回PDF内容，避免304缓存问题
+    response = send_file(file_path, as_attachment=False)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+# 获取报告历史记录
+@app.route('/api/report/history', methods=['GET'])
+def get_report_history():
+    reports = report_service.get_report_history()
+    return jsonify({
+        'status': 'success',
+        'reports': reports
+    })
+
+# 删除报告
+@app.route('/api/report/<report_id>', methods=['DELETE'])
+def delete_report(report_id):
+    success = report_service.delete_report(report_id)
+    if success:
+        return jsonify({
+            'status': 'success',
+            'message': f'报告 {report_id} 已删除'
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': f'报告 {report_id} 不存在'
+        }), 404
+
 # 自然语言查询接口
 @app.route('/api/nlp/query', methods=['POST'])
 def nlp_query():
@@ -102,6 +155,56 @@ def nlp_query():
     query = data.get('query', '')
     result = nlp_service.process_query(query)
     return jsonify(result)
+
+# 获取报告模板列表
+@app.route('/api/report/templates', methods=['GET'])
+def get_templates():
+    template_type = request.args.get('type', None)
+    templates = template_service.get_templates(template_type)
+    return jsonify({
+        'status': 'success',
+        'templates': templates
+    })
+
+# 获取指定ID的报告模板
+@app.route('/api/report/templates/<template_id>', methods=['GET'])
+def get_template(template_id):
+    template = template_service.get_template(template_id)
+    if template:
+        return jsonify({
+            'status': 'success',
+            'template': template
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': f'模板 {template_id} 不存在'
+        }), 404
+
+# 创建或更新报告模板
+@app.route('/api/report/templates', methods=['POST'])
+def save_template():
+    template = request.json
+    template_id = template_service.save_template(template)
+    return jsonify({
+        'status': 'success',
+        'template_id': template_id
+    })
+
+# 删除报告模板
+@app.route('/api/report/templates/<template_id>', methods=['DELETE'])
+def delete_template(template_id):
+    success = template_service.delete_template(template_id)
+    if success:
+        return jsonify({
+            'status': 'success',
+            'message': f'模板 {template_id} 已删除'
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': f'模板 {template_id} 不存在'
+        }), 404
 
 if __name__ == '__main__':
     # 确保报告目录存在

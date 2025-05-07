@@ -111,31 +111,47 @@ const BehaviorAnalysis = () => {
     return {
       title: {
         text: '答题状态分布',
-        left: 'center'
+        left: 'center',
+        top: 10,
+        textStyle: {
+          fontSize: 14
+        }
       },
       tooltip: {
         trigger: 'item',
         formatter: '{a} <br/>{b}: {c} ({d}%)'
       },
       legend: {
-        orient: 'vertical',
-        left: 'left',
+        type: 'scroll',
+        orient: 'horizontal',
+        bottom: 10,
+        left: 'center',
         data: stateData.map(item => item.name)
       },
       series: [
         {
           name: '答题状态',
           type: 'pie',
-          radius: '60%',
-          center: ['50%', '50%'],
-          data: stateData,
+          radius: ['30%', '55%'],
+          center: ['50%', '45%'],
+          avoidLabelOverlap: true,
+          itemStyle: {
+            borderRadius: 4
+          },
+          label: {
+            show: false
+          },
           emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowOffsetX: 0,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            label: {
+              show: true,
+              fontSize: 12,
+              fontWeight: 'bold'
             }
-          }
+          },
+          labelLine: {
+            show: false
+          },
+          data: stateData
         }
       ]
     };
@@ -153,34 +169,51 @@ const BehaviorAnalysis = () => {
     return {
       title: {
         text: '解题方法分布',
-        left: 'center'
+        left: 'center',
+        top: 10,
+        textStyle: {
+          fontSize: 14
+        }
       },
       tooltip: {
         trigger: 'item',
         formatter: '{a} <br/>{b}: {c} ({d}%)'
       },
       legend: {
-        orient: 'vertical',
-        left: 'left',
+        type: 'scroll',
+        orient: 'horizontal',
+        bottom: 10,
+        left: 'center',
         data: methodData.map(item => item.name)
       },
       series: [
         {
           name: '解题方法',
           type: 'pie',
-          radius: '60%',
-          center: ['50%', '50%'],
-          data: methodData,
+          radius: ['30%', '55%'],
+          center: ['50%', '45%'],
+          avoidLabelOverlap: true,
+          itemStyle: {
+            borderRadius: 4
+          },
+          label: {
+            show: false
+          },
           emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowOffsetX: 0,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            label: {
+              show: true,
+              fontSize: 12,
+              fontWeight: 'bold'
             }
-          }
+          },
+          labelLine: {
+            show: false
+          },
+          data: methodData
         }
       ]
     };
+
   };
   
   // 生成周内答题分布图表配置
@@ -197,7 +230,11 @@ const BehaviorAnalysis = () => {
     return {
       title: {
         text: '周内答题分布',
-        left: 'center'
+        left: 'center',
+        top: 10,
+        textStyle: {
+          fontSize: 14
+        }
       },
       tooltip: {
         trigger: 'axis',
@@ -205,9 +242,20 @@ const BehaviorAnalysis = () => {
           type: 'shadow'
         }
       },
+      grid: {
+        top: '15%',
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        containLabel: true
+      },
       xAxis: {
         type: 'category',
-        data: weekdays
+        data: weekdays,
+        axisLabel: {
+          interval: 0,
+          fontSize: 12
+        }
       },
       yAxis: {
         type: 'value',
@@ -377,19 +425,19 @@ const BehaviorAnalysis = () => {
           
           <Row gutter={16}>
             <Col xs={24} md={12}>
-              <Card className="chart-card" title="答题时间分布">
+              <Card className="chart-card" title="答题时间分布" style={{ marginBottom: 16, height: '420px' }}>
                 <ReactECharts
                   option={getHourDistributionOption()}
-                  style={{ height: '100%', width: '100%' }}
+                  style={{ height: '350px', width: '100%' }}
                   className="chart-container"
                 />
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card className="chart-card" title="答题状态分布">
+              <Card className="chart-card" title="答题状态分布" style={{ marginBottom: 16, height: '420px' }}>
                 <ReactECharts
                   option={getStateDistributionOption()}
-                  style={{ height: '100%', width: '100%' }}
+                  style={{ height: '350px', width: '100%' }}
                   className="chart-container"
                 />
               </Card>
@@ -398,19 +446,19 @@ const BehaviorAnalysis = () => {
           
           <Row gutter={16} style={{ marginTop: 16 }}>
             <Col xs={24} md={12}>
-              <Card className="chart-card" title="解题方法分布">
+              <Card className="chart-card" title="解题方法分布" style={{ marginBottom: 16, height: '460px' }}>
                 <ReactECharts
                   option={getMethodDistributionOption()}
-                  style={{ height: '100%', width: '100%' }}
+                  style={{ height: '390px', width: '100%' }}
                   className="chart-container"
                 />
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card className="chart-card" title="周内答题分布">
+              <Card className="chart-card" title="周内答题分布" style={{ marginBottom: 16, height: '460px' }}>
                 <ReactECharts
                   option={getWeekdayDistributionOption()}
-                  style={{ height: '100%', width: '100%' }}
+                  style={{ height: '390px', width: '100%' }}
                   className="chart-container"
                 />
               </Card>

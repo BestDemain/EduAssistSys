@@ -10,6 +10,7 @@ from pathlib import Path
 import json
 import base64
 from io import BytesIO
+import re
 from matplotlib.font_manager import FontProperties
 from services.data_service import DataService
 from services.analysis_service import AnalysisService
@@ -21,6 +22,23 @@ try:
     plt.rcParams['axes.unicode_minus'] = False
 except:
     print("警告: 无法设置中文字体，图表中的中文可能无法正确显示")
+
+# 初始化中文字体支持
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.fonts import addMapping
+
+# 尝试注册中文字体
+try:
+    # 注册系统中的中文字体
+    pdfmetrics.registerFont(TTFont('SimSun', 'C:\\Windows\\Fonts\\simsun.ttc'))
+    pdfmetrics.registerFont(TTFont('SimHei', 'C:\\Windows\\Fonts\\simhei.ttf'))
+    # 添加字体映射
+    addMapping('SimSun', 0, 0, 'SimSun') # normal
+    addMapping('SimHei', 0, 0, 'SimHei') # bold
+    print("成功注册中文字体")
+except Exception as e:
+    print(f"注册中文字体失败: {e}, PDF中的中文可能无法正确显示")
 
 class ReportService:
     def __init__(self):
@@ -192,6 +210,12 @@ class ReportService:
             # 创建PDF文档
             doc = SimpleDocTemplate(str(file_path), pagesize=letter)
             styles = getSampleStyleSheet()
+            # 修改样式以使用中文字体
+            for style_name, style in styles.byName.items():
+                if style_name == 'Title':
+                    style.fontName = 'SimHei'
+                else:
+                    style.fontName = 'SimSun'
             story = []
             
             # 添加标题
@@ -268,8 +292,333 @@ class ReportService:
     
     def _generate_pdf_general_report(self, analysis_result, file_path, content=None):
         """生成PDF格式的综合分析报告"""
-        # 实现类似于_generate_pdf_knowledge_report的方法
-        pass
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+            from reportlab.lib import colors
+            
+            # 确保文件路径是字符串且目录存在
+            file_path = str(file_path)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # 创建PDF文档
+            doc = SimpleDocTemplate(file_path, pagesize=letter)
+            styles = getSampleStyleSheet()
+            
+            # 修改样式以使用中文字体
+            for style_name, style in styles.byName.items():
+                if style_name == 'Title':
+                    style.fontName = 'SimHei'
+                else:
+                    style.fontName = 'SimSun'
+                    
+            story = []
+            
+            # 添加标题
+            title = "综合分析报告"
+            if analysis_result.get('knowledge', {}).get('student_id'):
+                title += f" - 学生ID: {analysis_result['knowledge']['student_id']}"
+            story.append(Paragraph(title, styles['Title']))
+            story.append(Spacer(1, 12))
+            
+            # 添加报告生成时间
+            story.append(Paragraph(f"报告生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+            story.append(Spacer(1, 12))
+            
+            # 添加知识点掌握情况
+            story.append(Paragraph("知识点掌握情况", styles['Heading2']))
+            story.append(Spacer(1, 6))
+            
+            # 创建知识点掌握情况表格
+            knowledge_data = [['知识点', '正确率', '正确提交率', '平均用时', '总提交次数', '正确提交次数']]
+            
+            knowledge_mastery = analysis_result.get('knowledge', {}).get('knowledge_mastery', {})
+            for knowledge, data in knowledge_mastery.items():
+                knowledge_data.append([
+                    knowledge,
+                    f"{data['correct_rate']:.2%}",
+                    f"{data['correct_submission_rate']:.2%}",
+                    f"{data['avg_time_consume']:.2f}秒",
+                    str(data['total_submissions']),
+                    str(data['correct_submissions'])
+                ])
+            
+            # 创建表格
+            if len(knowledge_data) > 1:  # 确保有数据
+                table = Table(knowledge_data)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'SimHei'),
+                    ('FONTNAME', (0, 1), (-1, -1), 'SimSun'),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                story.append(table)
+                story.append(Spacer(1, 12))
+            
+            # 添加薄弱环节分析
+            weak_points = analysis_result.get('knowledge', {}).get('weak_points', [])
+            if weak_points:
+                story.append(Paragraph("薄弱环节分析", styles['Heading2']))
+                story.append(Spacer(1, 6))
+                
+                for weak_point in weak_points:
+                    text = f"知识点 '{weak_point['knowledge']}' "
+                    if 'sub_knowledge' in weak_point:
+                        text += f"的从属知识点 '{weak_point['sub_knowledge']}' "
+                    text += f"正确率为 {weak_point['correct_rate']:.2%}，{weak_point['reason']}。"
+                    story.append(Paragraph(text, styles['Normal']))
+                    story.append(Spacer(1, 6))
+            
+            # 添加学习行为分析
+            story.append(Paragraph("学习行为分析", styles['Heading2']))
+            story.append(Spacer(1, 6))
+            
+            # 获取学习行为数据
+            behavior_data = analysis_result.get('behavior', {}).get('behavior_profile', {})
+            if behavior_data:
+                # 添加答题时间分布
+                if 'peak_hours' in behavior_data:
+                    story.append(Paragraph("答题时间分布", styles['Heading3']))
+                    story.append(Spacer(1, 4))
+                    peak_data = [["时间段", "提交次数"]]
+                    for hour_data in behavior_data['peak_hours']:
+                        hour = hour_data['hour']
+                        count = hour_data['count']
+                        peak_data.append([f"{hour}:00-{int(hour)+1}:00", str(count)])
+                    
+                    peak_table = Table(peak_data)
+                    peak_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'SimHei'),
+                        ('FONTNAME', (0, 1), (-1, -1), 'SimSun'),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                    ]))
+                    story.append(peak_table)
+                    story.append(Spacer(1, 8))
+                
+                # 添加答题状态分布
+                if 'state_distribution' in behavior_data:
+                    story.append(Paragraph("答题状态分布", styles['Heading3']))
+                    story.append(Spacer(1, 4))
+                    state_data = [["提交状态", "次数", "百分比"]]
+                    for state, count in behavior_data['state_distribution'].items():
+                        total = sum(behavior_data['state_distribution'].values())
+                        percentage = count / total if total > 0 else 0
+                        state_data.append([state, str(count), f"{percentage:.2%}"])
+                    
+                    state_table = Table(state_data)
+                    state_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'SimHei'),
+                        ('FONTNAME', (0, 1), (-1, -1), 'SimSun'),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                    ]))
+                    story.append(state_table)
+                    story.append(Spacer(1, 8))
+                
+                # 添加学习行为模式分析
+                story.append(Paragraph("学习行为模式分析", styles['Heading3']))
+                story.append(Spacer(1, 4))
+                
+                # 创建学习行为模式文本
+                behavior_patterns = []
+                
+                # 根据正确率和用时分析学习效率
+                if 'correct_rate' in behavior_data:
+                    correct_rate = behavior_data['correct_rate']
+                    if correct_rate > 0.8:
+                        behavior_patterns.append("学生答题正确率很高，掌握知识点较好。")
+                    elif correct_rate > 0.6:
+                        behavior_patterns.append("学生答题正确率一般，对部分知识点的理解需要加强。")
+                    else:
+                        behavior_patterns.append("学生答题正确率较低，需要加强基础知识学习。")
+                
+                # 根据答题时间分析学习时间习惯
+                if 'peak_hours' in behavior_data and behavior_data['peak_hours']:
+                    peak_hour = behavior_data['peak_hours'][0]['hour']
+                    if 8 <= peak_hour <= 12:
+                        behavior_patterns.append("学生倾向于在上午时间段答题，精力较为充沛。")
+                    elif 13 <= peak_hour <= 17:
+                        behavior_patterns.append("学生倾向于在下午时间段答题，学习效率较为稳定。")
+                    elif 18 <= peak_hour <= 22:
+                        behavior_patterns.append("学生倾向于在晚上时间段答题，可能会影响休息时间。")
+                    else:
+                        behavior_patterns.append(f"学生在{peak_hour}:00-{peak_hour+1}:00时段答题最多，可能是非常规学习时间。")
+                
+                # 添加方法使用分析
+                if 'method_distribution' in behavior_data:
+                    methods = behavior_data['method_distribution']
+                    if methods and len(methods) > 0:
+                        most_method = max(methods.items(), key=lambda x: x[1])[0]
+                        behavior_patterns.append(f"学生最常使用的答题方法是{most_method}。")
+                
+                # 如果有相对表现数据，添加相对表现分析
+                if 'relative_performance' in behavior_data:
+                    rel_perf = behavior_data['relative_performance']
+                    if 'correct_rate_vs_avg' in rel_perf:
+                        rate_vs_avg = rel_perf['correct_rate_vs_avg']
+                        if rate_vs_avg > 0.1:
+                            behavior_patterns.append("学生的正确率明显高于平均水平，表现优秀。")
+                        elif rate_vs_avg < -0.1:
+                            behavior_patterns.append("学生的正确率低于平均水平，需要改进。")
+                
+                # 添加行为模式文本
+                if behavior_patterns:
+                    for pattern in behavior_patterns:
+                        story.append(Paragraph(f"- {pattern}", styles['Normal']))
+                        story.append(Spacer(1, 4))
+                else:
+                    story.append(Paragraph("无法生成行为模式分析，数据不足。", styles['Normal']))
+                    story.append(Spacer(1, 4))
+            else:
+                story.append(Paragraph("无学习行为分析数据", styles['Normal']))
+            
+            story.append(Spacer(1, 12))
+            
+            # 添加题目难度分析
+            story.append(Paragraph("题目难度分析", styles['Heading2']))
+            story.append(Spacer(1, 6))
+            
+            # 获取题目难度数据
+            difficulty_data = analysis_result.get('difficulty', {})
+            
+            # 计算题目难度分布
+            if 'question_difficulty' in difficulty_data:
+                # 从question_difficulty中计算难度分布
+                difficulty_distribution = {}
+                for title_id, question in difficulty_data['question_difficulty'].items():
+                    # 根据正确率确定难度级别
+                    correct_rate = question['correct_rate']
+                    if correct_rate >= 0.8:
+                        level = '容易'
+                    elif correct_rate >= 0.5:
+                        level = '中等'
+                    else:
+                        level = '困难'
+                    
+                    difficulty_distribution[level] = difficulty_distribution.get(level, 0) + 1
+                
+                # 添加题目难度分布
+                if difficulty_distribution:
+                    story.append(Paragraph("题目难度分布", styles['Heading3']))
+                    story.append(Spacer(1, 4))
+                    diff_data = [["难度级别", "题目数量", "百分比"]]
+                    for level, count in difficulty_distribution.items():
+                        total = sum(difficulty_distribution.values())
+                        percentage = count / total if total > 0 else 0
+                        diff_data.append([level, str(count), f"{percentage:.2%}"])
+                    
+                    diff_table = Table(diff_data)
+                    diff_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'SimHei'),
+                        ('FONTNAME', (0, 1), (-1, -1), 'SimSun'),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                    ]))
+                    story.append(diff_table)
+                    story.append(Spacer(1, 8))
+                
+                # 添加难度异常题目分析
+                if 'unreasonable_questions' in difficulty_data:
+                    story.append(Paragraph("难度异常题目分析", styles['Heading3']))
+                    story.append(Spacer(1, 4))
+                    abnormal_data = [["题目ID", "正确率", "平均掌握度", "知识点", "原因"]]
+                    for question in difficulty_data['unreasonable_questions']:
+                        abnormal_data.append([
+                            question['title_id'],
+                            f"{question['correct_rate']:.2%}",
+                            f"{question['avg_mastery']:.2%}",
+                            question['knowledge'],
+                            question['reason']
+                        ])
+                    
+                    if len(abnormal_data) > 1:  # 确保有数据
+                        abnormal_table = Table(abnormal_data)
+                        abnormal_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'SimHei'),
+                            ('FONTNAME', (0, 1), (-1, -1), 'SimSun'),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                        ]))
+                        story.append(abnormal_table)
+                    else:
+                        story.append(Paragraph("无难度异常题目", styles['Normal']))
+                    story.append(Spacer(1, 8))
+                
+                # 添加难度建议
+                story.append(Paragraph("难度建议", styles['Heading3']))
+                story.append(Spacer(1, 4))
+                
+                # 生成难度建议
+                difficulty_suggestions = []
+                
+                # 根据难度分布生成建议
+                if difficulty_distribution:
+                    # 分析难度分布情况
+                    total_questions = sum(difficulty_distribution.values())
+                    difficult_count = difficulty_distribution.get('困难', 0)
+                    easy_count = difficulty_distribution.get('容易', 0)
+                    
+                    # 如果困难题目比例过高
+                    if difficult_count / total_questions > 0.4:
+                        difficulty_suggestions.append("困难题目比例较高，建议适当增加中等难度和简单题目，以提高学生学习积极性。")
+                    
+                    # 如果简单题目比例过高
+                    if easy_count / total_questions > 0.6:
+                        difficulty_suggestions.append("简单题目比例较高，建议适当增加难度，以提升学生解决问题的能力。")
+                    
+                    # 如果难度分布较为均衡
+                    if 0.2 <= difficult_count / total_questions <= 0.4 and 0.3 <= easy_count / total_questions <= 0.5:
+                        difficulty_suggestions.append("题目难度分布较为均衡，适合大多数学生的学习需求。")
+                
+                # 根据异常题目生成建议
+                if 'unreasonable_questions' in difficulty_data and difficulty_data['unreasonable_questions']:
+                    unreasonable_count = len(difficulty_data['unreasonable_questions'])
+                    difficulty_suggestions.append(f"有{unreasonable_count}道题目的难度与学生知识掌握程度不符，建议检查这些题目的设计。")
+                    
+                    # 如果异常题目较多，给出进一步建议
+                    if unreasonable_count >= 3:
+                        difficulty_suggestions.append("建议对难度异常题目进行重新设计或提供更详细的解题指导。")
+                
+                # 添加建议到报告中
+                if difficulty_suggestions:
+                    for suggestion in difficulty_suggestions:
+                        story.append(Paragraph(f"- {suggestion}", styles['Normal']))
+                        story.append(Spacer(1, 4))
+                else:
+                    story.append(Paragraph("无难度建议", styles['Normal']))
+            else:
+                story.append(Paragraph("无题目难度分析数据", styles['Normal']))
+            
+            # 生成PDF
+            doc.build(story)
+            print(f"已生成PDF报告: {file_path}")
+            
+        except Exception as e:
+            print(f"生成PDF报告失败: {e}")
+            return {'error': f'生成PDF报告失败: {e}'}
     
     # HTML报告生成方法
     def _generate_html_knowledge_report(self, analysis_result, file_path, content=None):
@@ -374,8 +723,339 @@ class ReportService:
     
     def _generate_html_general_report(self, analysis_result, file_path, content=None):
         """生成HTML格式的综合分析报告"""
-        # 实现类似于_generate_html_knowledge_report的方法
-        pass
+        try:
+            # 创建HTML内容
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>综合分析报告</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                    h1 {{ color: #333; }}
+                    h2 {{ color: #666; }}
+                    h3 {{ color: #888; }}
+                    table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; }}
+                    tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                    .weak-point {{ color: #d9534f; }}
+                    .section {{ margin-bottom: 30px; }}
+                </style>
+            </head>
+            <body>
+                <h1>综合分析报告</h1>
+            """
+            
+            # 添加学生信息（如果有）
+            if analysis_result.get('knowledge', {}).get('student_id'):
+                html_content += f"<p>学生ID: {analysis_result['knowledge']['student_id']}</p>"
+            
+            # 添加报告生成时间
+            html_content += f"<p>报告生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>"
+            
+            # 添加知识点掌握情况
+            html_content += "<div class='section'>"
+            html_content += "<h2>知识点掌握情况</h2>"
+            
+            knowledge_mastery = analysis_result.get('knowledge', {}).get('knowledge_mastery', {})
+            if knowledge_mastery:
+                html_content += """
+                    <table>
+                        <tr>
+                            <th>知识点</th>
+                            <th>正确率</th>
+                            <th>正确提交率</th>
+                            <th>平均用时</th>
+                            <th>总提交次数</th>
+                            <th>正确提交次数</th>
+                        </tr>
+                """
+                
+                for knowledge, data in knowledge_mastery.items():
+                    html_content += f"""
+                        <tr>
+                            <td>{knowledge}</td>
+                            <td>{data['correct_rate']:.2%}</td>
+                            <td>{data['correct_submission_rate']:.2%}</td>
+                            <td>{data['avg_time_consume']:.2f}秒</td>
+                            <td>{data['total_submissions']}</td>
+                            <td>{data['correct_submissions']}</td>
+                        </tr>
+                    """
+                
+                html_content += "</table>"
+            else:
+                html_content += "<p>无知识点掌握数据</p>"
+            
+            # 添加薄弱环节分析
+            weak_points = analysis_result.get('knowledge', {}).get('weak_points', [])
+            if weak_points:
+                html_content += "<h3>薄弱环节分析</h3><ul>"
+                
+                for weak_point in weak_points:
+                    text = f"知识点 '{weak_point['knowledge']}' "
+                    if 'sub_knowledge' in weak_point:
+                        text += f"的从属知识点 '{weak_point['sub_knowledge']}' "
+                    text += f"正确率为 {weak_point['correct_rate']:.2%}，{weak_point['reason']}。"
+                    html_content += f"<li class='weak-point'>{text}</li>"
+                
+                html_content += "</ul>"
+            html_content += "</div>"
+            
+            # 添加学习行为分析
+            html_content += "<div class='section'>"
+            html_content += "<h2>学习行为分析</h2>"
+            
+            behavior_data = analysis_result.get('behavior', {}).get('behavior_profile', {})
+            if behavior_data:
+                # 添加答题时间分布
+                if 'peak_hours' in behavior_data:
+                    html_content += "<h3>答题时间分布</h3>"
+                    html_content += """
+                        <table>
+                            <tr>
+                                <th>时间段</th>
+                                <th>提交次数</th>
+                            </tr>
+                    """
+                    
+                    for item in behavior_data['peak_hours']:
+                        hour = item['hour']
+                        count = item['count']
+                        html_content += f"""
+                            <tr>
+                                <td>{hour}:00-{int(hour)+1}:00</td>
+                                <td>{count}</td>
+                            </tr>
+                        """
+                    
+                    html_content += "</table>"
+                
+                # 添加答题状态分布
+                if 'state_distribution' in behavior_data:
+                    html_content += "<h3>答题状态分布</h3>"
+                    html_content += """
+                        <table>
+                            <tr>
+                                <th>提交状态</th>
+                                <th>次数</th>
+                                <th>百分比</th>
+                            </tr>
+                    """
+                    
+                    for state, count in behavior_data['state_distribution'].items():
+                        total = sum(behavior_data['state_distribution'].values())
+                        percentage = count / total if total > 0 else 0
+                        html_content += f"""
+                            <tr>
+                                <td>{state}</td>
+                                <td>{count}</td>
+                                <td>{percentage:.2%}</td>
+                            </tr>
+                        """
+                    
+                    html_content += "</table>"
+                
+                # 添加学习行为模式分析
+                html_content += "<h3>学习行为模式分析</h3><ul>"
+                
+                # 创建学习行为模式文本
+                behavior_patterns = []
+                
+                # 根据正确率分析学习效率
+                if 'correct_rate' in behavior_data:
+                    correct_rate = behavior_data['correct_rate']
+                    if correct_rate > 0.8:
+                        behavior_patterns.append("学生答题正确率很高，掌握知识点较好。")
+                    elif correct_rate > 0.6:
+                        behavior_patterns.append("学生答题正确率一般，对部分知识点的理解需要加强。")
+                    else:
+                        behavior_patterns.append("学生答题正确率较低，需要加强基础知识学习。")
+                
+                # 根据答题时间分析学习时间习惯
+                if 'peak_hours' in behavior_data and behavior_data['peak_hours']:
+                    peak_hour = behavior_data['peak_hours'][0]['hour']
+                    if 8 <= peak_hour <= 12:
+                        behavior_patterns.append("学生倾向于在上午时间段答题，精力较为充沛。")
+                    elif 13 <= peak_hour <= 17:
+                        behavior_patterns.append("学生倾向于在下午时间段答题，学习效率较为稳定。")
+                    elif 18 <= peak_hour <= 22:
+                        behavior_patterns.append("学生倾向于在晚上时间段答题，可能会影响休息时间。")
+                    else:
+                        behavior_patterns.append(f"学生在{peak_hour}:00-{peak_hour+1}:00时段答题最多，可能是非常规学习时间。")
+                
+                # 添加方法使用分析
+                if 'method_distribution' in behavior_data:
+                    methods = behavior_data['method_distribution']
+                    if methods and len(methods) > 0:
+                        most_method = max(methods.items(), key=lambda x: x[1])[0]
+                        behavior_patterns.append(f"学生最常使用的答题方法是{most_method}。")
+                
+                # 如果有相对表现数据，添加相对表现分析
+                if 'relative_performance' in behavior_data:
+                    rel_perf = behavior_data['relative_performance']
+                    if 'correct_rate_vs_avg' in rel_perf:
+                        rate_vs_avg = rel_perf['correct_rate_vs_avg']
+                        if rate_vs_avg > 0.1:
+                            behavior_patterns.append("学生的正确率明显高于平均水平，表现优秀。")
+                        elif rate_vs_avg < -0.1:
+                            behavior_patterns.append("学生的正确率低于平均水平，需要改进。")
+                
+                # 添加行为模式文本
+                if behavior_patterns:
+                    for pattern in behavior_patterns:
+                        html_content += f"<li>{pattern}</li>"
+                else:
+                    html_content += "<li>无法生成行为模式分析，数据不足。</li>"
+                
+                html_content += "</ul>"
+            else:
+                html_content += "<p>无学习行为分析数据</p>"
+            html_content += "</div>"
+            
+            # 添加题目难度分析
+            html_content += "<div class='section'>"
+            html_content += "<h2>题目难度分析</h2>"
+            
+            difficulty_data = analysis_result.get('difficulty', {})
+            
+            # 从题目难度数据中提取评估信息
+            question_difficulty = difficulty_data.get('question_difficulty', {})
+            if question_difficulty:
+                html_content += "<h3>题目难度分布</h3>"
+                html_content += """
+                    <table>
+                        <tr>
+                            <th>难度级别</th>
+                            <th>题目数量</th>
+                            <th>百分比</th>
+                        </tr>
+                """
+                
+                # 根据正确率对题目进行分类
+                difficulty_levels = {'简单': 0, '中等': 0, '困难': 0}
+                
+                for title_id, data in question_difficulty.items():
+                    if data['correct_rate'] > 0.7:
+                        difficulty_levels['简单'] += 1
+                    elif data['correct_rate'] > 0.4:
+                        difficulty_levels['中等'] += 1
+                    else:
+                        difficulty_levels['困难'] += 1
+                
+                total = sum(difficulty_levels.values())
+                for level, count in difficulty_levels.items():
+                    percentage = count / total if total > 0 else 0
+                    html_content += f"""
+                        <tr>
+                            <td>{level}</td>
+                            <td>{count}</td>
+                            <td>{percentage:.2%}</td>
+                        </tr>
+                    """
+                
+                html_content += "</table>"
+            
+                # 添加难度异常题目分析
+                unreasonable_questions = difficulty_data.get('unreasonable_questions', [])
+                if unreasonable_questions:
+                    html_content += "<h3>难度异常题目分析</h3>"
+                    html_content += """
+                        <table>
+                            <tr>
+                                <th>题目ID</th>
+                                <th>正确率</th>
+                                <th>平均掌握度</th>
+                                <th>知识点</th>
+                                <th>原因</th>
+                            </tr>
+                    """
+                    
+                    for question in unreasonable_questions:
+                        html_content += f"""
+                            <tr>
+                                <td>{question['title_id']}</td>
+                                <td>{question['correct_rate']:.2%}</td>
+                                <td>{question['avg_mastery']:.2%}</td>
+                                <td>{question['knowledge']}</td>
+                                <td>{question['reason']}</td>
+                            </tr>
+                        """
+                    
+                    html_content += "</table>"
+                else:
+                    html_content += "<p>无难度异常题目</p>"
+            
+                # 添加难度建议
+                html_content += "<h3>难度建议</h3>"
+                html_content += "<ul>"
+                
+                # 生成难度建议
+                difficulty_suggestions = []
+                
+                # 根据难度分布生成建议
+                if difficulty_levels:
+                    # 分析难度分布情况
+                    total_questions = sum(difficulty_levels.values())
+                    difficult_count = difficulty_levels.get('困难', 0)
+                    easy_count = difficulty_levels.get('简单', 0)
+                    
+                    # 如果困难题目比例过高
+                    if difficult_count / total_questions > 0.4:
+                        difficulty_suggestions.append("困难题目比例较高，建议适当增加中等难度和简单题目，以提高学生学习积极性。")
+                    
+                    # 如果简单题目比例过高
+                    if easy_count / total_questions > 0.6:
+                        difficulty_suggestions.append("简单题目比例较高，建议适当增加难度，以提升学生解决问题的能力。")
+                    
+                    # 如果难度分布较为均衡
+                    if 0.2 <= difficult_count / total_questions <= 0.4 and 0.3 <= easy_count / total_questions <= 0.5:
+                        difficulty_suggestions.append("题目难度分布较为均衡，适合大多数学生的学习需求。")
+                
+                # 根据异常题目生成建议
+                if unreasonable_questions:
+                    unreasonable_count = len(unreasonable_questions)
+                    difficulty_suggestions.append(f"有{unreasonable_count}道题目的难度与学生知识掌握程度不符，建议检查这些题目的设计。")
+                    
+                    # 如果异常题目较多，给出进一步建议
+                    if unreasonable_count >= 3:
+                        difficulty_suggestions.append("建议对难度异常题目进行重新设计或提供更详细的解题指导。")
+                
+                # 添加建议到报告中
+                if difficulty_suggestions:
+                    for suggestion in difficulty_suggestions:
+                        html_content += f"<li>{suggestion}</li>"
+                else:
+                    html_content += "<li>无难度建议</li>"
+                
+                html_content += "</ul>"
+                
+                # 此部分内容已在上面实现，不需要再次添加
+                # html_content += "<h3>难度建议</h3><ul>"
+                # for suggestion in difficulty_data['difficulty_suggestions']:
+                #    html_content += f"<li>{suggestion}</li>"
+                # html_content += "</ul>"
+            else:
+                html_content += "<p>无题目难度分析数据</p>"
+            html_content += "</div>"
+            
+            # 结束HTML
+            html_content += """
+            </body>
+            </html>
+            """
+            
+            # 写入文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            print(f"已生成HTML报告: {file_path}")
+            
+        except Exception as e:
+            print(f"生成HTML报告失败: {e}")
+            return {'error': f'生成HTML报告失败: {e}'}
     
     # DOCX报告生成方法
     def _generate_docx_knowledge_report(self, analysis_result, file_path, content=None):
@@ -522,3 +1202,84 @@ class ReportService:
         """生成XLSX格式的综合分析报告"""
         # 实现类似于_generate_xlsx_knowledge_report的方法
         pass
+        
+    def get_report_history(self):
+        """获取报告生成历史记录
+        
+        Returns:
+            报告历史记录列表，每条记录包含报告ID、类型、生成时间、文件路径等信息
+        """
+        try:
+            # 获取报告目录中的所有文件
+            report_files = list(self.report_dir.glob('*.*'))
+            
+            # 解析文件名，提取报告信息
+            reports = []
+            for file_path in report_files:
+                filename = file_path.name
+                # 解析文件名格式: {report_type}_report[_{student_id}]_{timestamp}.{format}
+                match = re.match(r'(\w+)_report(?:_(\w+))?_(\d{14})\.(\w+)', filename)
+                
+                if match:
+                    report_type, student_id, timestamp, format_type = match.groups()
+                    # 将时间戳转换为可读格式
+                    try:
+                        time_obj = datetime.strptime(timestamp, '%Y%m%d%H%M%S')
+                        created_time = time_obj.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        created_time = '未知时间'
+                    
+                    # 创建报告记录
+                    report = {
+                        'id': f"{report_type}_{timestamp}",
+                        'type': report_type,
+                        'student_id': student_id if student_id else 'all',
+                        'format': format_type,
+                        'created_at': created_time,
+                        'file_path': str(file_path),
+                        'filename': filename
+                    }
+                    reports.append(report)
+            
+            # 按时间倒序排序
+            reports.sort(key=lambda x: x['created_at'], reverse=True)
+            return reports
+            
+        except Exception as e:
+            print(f"获取报告历史记录失败: {e}")
+            return []
+    
+    def delete_report(self, report_id):
+        """删除指定ID的报告
+        
+        Args:
+            report_id: 报告ID，格式为 {report_type}_{timestamp}
+            
+        Returns:
+            是否删除成功
+        """
+        try:
+            # 解析报告ID，提取报告类型和时间戳
+            match = re.match(r'(\w+)_(\d{14})', report_id)
+            if not match:
+                return False
+                
+            report_type, timestamp = match.groups()
+            
+            # 查找匹配的报告文件
+            pattern = f"{report_type}_report*_{timestamp}.*"
+            matching_files = list(self.report_dir.glob(pattern))
+            
+            if not matching_files:
+                return False
+                
+            # 删除找到的文件
+            for file_path in matching_files:
+                os.remove(file_path)
+                print(f"已删除报告文件: {file_path}")
+                
+            return True
+            
+        except Exception as e:
+            print(f"删除报告失败: {e}")
+            return False

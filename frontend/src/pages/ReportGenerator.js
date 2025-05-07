@@ -105,25 +105,9 @@ const ReportGenerator = () => {
   
   // 预览报告
   const previewReport = async (path) => {
-    try {
-      setLoading(true);
-      
-      const filename = path.split('/').pop();
-      const response = await axios.get(`/api/report/preview/${filename}`);
-      
-      if (response.data.status === 'success') {
-        setPreviewData(response.data.preview_data);
-        setPreviewVisible(true);
-      } else {
-        message.error('预览报告失败！');
-      }
-      
-      setLoading(false);
-    } catch (err) {
-      console.error('预览报告失败:', err);
-      message.error('预览报告失败，请稍后重试');
-      setLoading(false);
-    }
+    if (!path) return;
+    const filename = path.split('/').pop();
+    window.open(`/api/report/preview/${filename}`, '_blank');
   };
   
   // 删除报告

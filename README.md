@@ -71,6 +71,7 @@ cd frontend
 npm install
 
 # 运行开发服务器
+$Env:NODE_OPTIONS="--openssl-legacy-provider"
 npm start
 ```
 
@@ -81,7 +82,3 @@ npm start
 1. **学习者基本信息**：包含学习者ID、性别、年龄、专业等信息
 2. **题目基本信息**：包含题目ID、分数、知识点、从属知识点等信息
 3. **提交记录**：包含提交时间、状态、分数、题目ID、方法、内存使用、耗时、学习者ID等信息
-
-## 开发团队
-
-智学发展革新小组
