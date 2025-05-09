@@ -4,6 +4,7 @@ import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
 import { Statistic } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import { SubmissionTimeline } from '../components/D3Visualizations';
 
 const { Option } = Select;
 const { Title, Paragraph } = Typography;
@@ -14,6 +15,7 @@ const BehaviorAnalysis = () => {
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [behaviorData, setBehaviorData] = useState(null);
+  const [submissionData, setSubmissionData] = useState([]);
   
   // 加载学生数据
   useEffect(() => {
@@ -47,6 +49,27 @@ const BehaviorAnalysis = () => {
       
       if (response.data.status === 'success') {
         setBehaviorData(response.data.behavior_profile);
+        
+        // 获取提交数据用于时间线可视化
+        if (response.data.submission_timeline) {
+          setSubmissionData(response.data.submission_timeline);
+        } else {
+          // 如果API没有返回时间线数据，尝试单独获取
+          try {
+            const timelineUrl = selectedStudent 
+              ? `/api/analysis/submission_timeline?student_id=${selectedStudent}` 
+              : '/api/analysis/submission_timeline';
+            
+            const timelineResponse = await axios.get(timelineUrl);
+            
+            if (timelineResponse.data.status === 'success' && timelineResponse.data.submissions) {
+              setSubmissionData(timelineResponse.data.submissions);
+            }
+          } catch (timelineErr) {
+            console.error('获取提交时间线数据失败:', timelineErr);
+            // 不显示错误，因为这只是附加功能
+          }
+        }
       } else {
         setError(response.data.message || '分析失败');
       }
@@ -226,6 +249,35 @@ const BehaviorAnalysis = () => {
       name: day,
       value: Math.floor(Math.random() * 100) + 20 // 模拟数据
     }));
+    
+    // 如果提交数据为空，生成模拟数据用于D3可视化展示
+    if (submissionData.length === 0) {
+      const mockSubmissionData = [];
+      const now = new Date();
+      const knowledgePoints = ['数组', '链表', '树', '图', '动态规划', '贪心算法'];
+      
+      // 生成过去30天的模拟提交数据
+      for (let i = 0; i < 50; i++) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+        date.setHours(Math.floor(Math.random() * 24));
+        date.setMinutes(Math.floor(Math.random() * 60));
+        
+        const formatDate = (date) => {
+          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:00`;
+        };
+        
+        mockSubmissionData.push({
+          submit_id: `mock-${i}`,
+          submit_time: formatDate(date),
+          knowledge: knowledgePoints[Math.floor(Math.random() * knowledgePoints.length)],
+          is_correct: Math.random() > 0.3,
+          time_consume: Math.floor(Math.random() * 300) + 10
+        });
+      }
+      
+      setSubmissionData(mockSubmissionData);
+    }
     
     return {
       title: {
@@ -461,6 +513,22 @@ const BehaviorAnalysis = () => {
                   style={{ height: '390px', width: '100%' }}
                   className="chart-container"
                 />
+              </Card>
+            </Col>
+          </Row>
+          
+          {/* D3.js答题行为时间线 */}
+          <Row gutter={16} style={{ marginTop: 16 }}>
+            <Col xs={24}>
+              <Card className="chart-card" title="答题行为时间线 (D3可视化)" style={{ marginBottom: 16 }}>
+                {submissionData && submissionData.length > 0 ? (
+                  <SubmissionTimeline data={submissionData} />
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Spin tip="加载数据中..." />
+                    <p style={{ marginTop: '10px' }}>如果长时间未显示，请点击"分析"按钮重新获取数据</p>
+                  </div>
+                )}
               </Card>
             </Col>
           </Row>

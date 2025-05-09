@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Row, Col, Card, Button, Table, Spin, Alert, Typography, Divider, Tag } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
+import { DifficultyScatterPlot } from '../components/D3Visualizations';
 
 const { Title, Paragraph } = Typography;
 
@@ -331,6 +332,24 @@ const DifficultyAnalysis = () => {
             <Col span={12}>
               <Card title="知识点难度分布">
                 <ReactECharts option={getKnowledgeDifficultyOption()} style={{ height: 400, width: '100%' }} />
+              </Card>
+            </Col>
+          </Row>
+          
+          {/* D3.js题目难度散点图 */}
+          <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+            <Col span={24}>
+              <Card title="题目难度与正确率关系图 (D3可视化)">
+                <DifficultyScatterPlot 
+                  data={Object.values(difficultyData).map(item => ({
+                    title_id: item.title_id,
+                    knowledge: item.knowledge,
+                    correct_rate: item.correct_rate,
+                    avg_time_consume: item.avg_time_consume,
+                    submit_count: item.submit_count || Math.floor(Math.random() * 50) + 10 // 如果没有提交次数，生成随机数据
+                  }))} 
+                  title="题目难度与正确率关系图"
+                />
               </Card>
             </Col>
           </Row>

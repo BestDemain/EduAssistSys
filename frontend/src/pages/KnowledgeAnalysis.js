@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Row, Col, Card, Select, Button, Table, Spin, Alert, Typography, Divider } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
+import { KnowledgeForceGraph } from '../components/D3Visualizations';
 
 const { Option } = Select;
 const { Title, Paragraph } = Typography;
@@ -13,6 +14,7 @@ const KnowledgeAnalysis = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [knowledgeData, setKnowledgeData] = useState(null);
   const [weakPoints, setWeakPoints] = useState([]);
+  const [forceGraphData, setForceGraphData] = useState(null);
   
   // 加载学生数据
   useEffect(() => {
@@ -37,16 +39,51 @@ const KnowledgeAnalysis = () => {
     try {
       setLoading(true);
       setError(null);
+      // 重置力导向图数据，避免使用旧数据
+      setForceGraphData(null);
       
       const url = selectedStudent 
         ? `/api/analysis/knowledge?student_id=${selectedStudent}` 
         : '/api/analysis/knowledge';
       
+      console.log('请求知识点分析数据:', url);
       const response = await axios.get(url);
+      console.log('知识点分析响应:', response.data);
       
       if (response.data.status === 'success') {
         setKnowledgeData(response.data.knowledge_mastery);
         setWeakPoints(response.data.weak_points || []);
+        
+        // 获取知识点关联数据用于力导向图可视化
+        if (response.data.knowledge_relations) {
+          console.log('API直接返回了知识点关联数据');
+          setForceGraphData(response.data.knowledge_relations);
+        } else {
+          // 如果API没有返回关联数据，尝试单独获取
+          try {
+            const relationsUrl = selectedStudent 
+              ? `/api/analysis/knowledge_relations?student_id=${selectedStudent}` 
+              : '/api/analysis/knowledge_relations';
+            
+            console.log('尝试单独获取知识点关联数据:', relationsUrl);
+            const relationsResponse = await axios.get(relationsUrl);
+            console.log('知识点关联响应:', relationsResponse.data);
+            
+            if (relationsResponse.data.status === 'success' && relationsResponse.data.relations) {
+              console.log('成功获取知识点关联数据');
+              setForceGraphData(relationsResponse.data.relations);
+            } else {
+              console.log('API未返回有效的知识点关联数据，将生成模拟数据');
+              // 如果API不存在，生成模拟数据用于展示
+              setTimeout(() => generateMockForceGraphData(), 0);
+            }
+          } catch (relationsErr) {
+            console.error('获取知识点关联数据失败:', relationsErr);
+            // 生成模拟数据用于展示
+            console.log('将生成模拟的知识点关联数据');
+            setTimeout(() => generateMockForceGraphData(), 0);
+          }
+        }
       } else {
         setError(response.data.message || '分析失败');
       }
@@ -57,6 +94,77 @@ const KnowledgeAnalysis = () => {
       setError('知识点分析失败，请稍后重试');
       setLoading(false);
     }
+  };
+  
+  // 生成模拟力导向图数据
+  const generateMockForceGraphData = () => {
+    if (!knowledgeData) {
+      console.log('无法生成力导向图：知识点数据为空');
+      return;
+    }
+    
+    const knowledgeNames = Object.keys(knowledgeData);
+    console.log('知识点列表:', knowledgeNames);
+    
+    if (knowledgeNames.length === 0) {
+      console.log('无法生成力导向图：知识点列表为空');
+      return;
+    }
+    
+    // 创建节点
+    const nodes = knowledgeNames.map(name => ({
+      id: name,
+      name: name,
+      mastery: knowledgeData[name].correct_rate || 0,
+      value: (knowledgeData[name].total_submissions || 1) / 10 // 节点大小基于提交次数
+    }));
+    
+    // 创建连接
+    const links = [];
+    
+    // 确保至少有两个知识点才能创建连接
+    if (knowledgeNames.length > 1) {
+      // 为每个知识点创建1-2个随机连接
+      knowledgeNames.forEach((source, i) => {
+        const numLinks = Math.floor(Math.random() * 2) + 1; // 1-2个连接
+        
+        for (let j = 0; j < numLinks; j++) {
+          // 随机选择目标知识点（不包括自己）
+          let targetIndex;
+          do {
+            targetIndex = Math.floor(Math.random() * knowledgeNames.length);
+          } while (targetIndex === i);
+          
+          const target = knowledgeNames[targetIndex];
+          
+          // 添加连接（避免重复）
+          if (!links.some(link => 
+            (link.source === source && link.target === target) || 
+            (link.source === target && link.target === source)
+          )) {
+            links.push({
+              source: source,
+              target: target,
+              value: Math.random() * 2 + 1 // 随机连接强度
+            });
+          }
+        }
+      });
+    } else if (knowledgeNames.length === 1) {
+      // 如果只有一个知识点，创建自环
+      links.push({
+        source: knowledgeNames[0],
+        target: knowledgeNames[0],
+        value: 1
+      });
+      console.log('只有一个知识点，创建自环连接');
+    } else {
+      console.log('无法创建连接：知识点数量不足');
+    }
+    
+    const graphData = { nodes, links };
+    console.log('生成的力导向图数据:', graphData);
+    setForceGraphData(graphData);
   };
   
   // 生成知识点掌握度雷达图配置
@@ -312,6 +420,20 @@ const KnowledgeAnalysis = () => {
               </Card>
             </Col>
           </Row>
+          
+          {/* D3.js知识点关联力导向图 */}
+          {forceGraphData && forceGraphData.nodes && (
+            <Row gutter={16}>
+              <Col xs={24}>
+                <Card className="chart-card" title="知识点关联力导向图 (D3可视化)">
+                  <KnowledgeForceGraph data={forceGraphData} />
+                </Card>
+              </Col>
+            </Row>
+          )}
+          
+          {/* 调试信息 */}
+          {forceGraphData && console.log('力导向图数据:', forceGraphData)}
           
           <Divider orientation="left">从属知识点掌握情况</Divider>
           <Table 
