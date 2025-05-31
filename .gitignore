@@ -1,5 +1,6 @@
 # 忽略前端依赖
 frontend/node_modules/
+frontend/build/
 frontend/.env.local
 frontend/.env.development
 frontend/.env.test
@@ -13,8 +14,80 @@ backend/*.pyc
 backend/.venv/
 backend/env/
 
+# Python相关
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PIPFILE.lock
+
+# 虚拟环境
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.env
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# conda环境
+.conda/
+
+# 数据和模型文件
+*.pkl
+*.h5
+*.model
+*.weights
+
+# 报告和输出文件
+backend/reports/*.pdf
+backend/reports/*.html
+backend/reports/*.png
+backend/reports/*.jpg
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
 # 通用忽略
 .DS_Store
 *.log
 .idea/
 .vscode/
+
+# 系统文件
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# 配置文件（可能包含敏感信息）
+config.ini
+.env.local
+.env.production
