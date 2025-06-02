@@ -74,7 +74,8 @@ const Dashboard = () => {
           }));
           
           // 处理状态分布数据
-          const stateData = Object.entries(behaviorProfile.state_distribution).filter(([key, value]) => !key.match(/[^\x00-\x7F]/)).map(([key, value]) => ({
+          const stateData = Object.entries(behaviorProfile.state_distribution)
+          .filter(([key, value]) => !key.match(/[^\x20-\x7F]/)).map(([key, value]) => ({
             name: key,
             value: value
           }));
