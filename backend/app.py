@@ -206,10 +206,33 @@ def delete_template(template_id):
             'message': f'模板 {template_id} 不存在'
         }), 404
 
+# 获取掌握趋势分析
+@app.route('/api/analysis/mastery_trend', methods=['GET'])
+def analyze_mastery_trend():
+    student_id = request.args.get('student_id', None)
+    granularity = request.args.get('granularity', 'day')
+    group_by = request.args.get('group_by', 'knowledge')
+    result = analysis_service.analyze_mastery_trend(student_id, granularity, group_by)
+    # 递归转换 numpy.int64 为 int，防止前端解析问题
+    def convert_np(obj):
+        import numpy as np
+        if isinstance(obj, dict):
+            return {k: convert_np(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_np(i) for i in obj]
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        else:
+            return obj
+    result = convert_np(result)
+    return jsonify(result)
+
 if __name__ == '__main__':
     # 确保报告目录存在
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
     os.makedirs(report_dir, exist_ok=True)
     
     # 启动Flask应用
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8000)

@@ -66,8 +66,7 @@ class AnalysisService:
             # 计算平均用时
             group = group.copy()  # 创建副本以避免SettingWithCopyWarning
             # 处理异常值，如"--"或"-"等非数值
-            group.loc[:, 'timeconsume'] = group['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
-            group.loc[:, 'timeconsume'] = pd.to_numeric(group['timeconsume'], errors='coerce')
+            group['timeconsume'] = pd.to_numeric(group['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
             avg_time_consume = group['timeconsume'].mean()
             
             # 存储该知识点的掌握情况
@@ -94,8 +93,7 @@ class AnalysisService:
                 
                 # 处理异常值，如"--"或"-"等非数值
                 sub_group = sub_group.copy()  # 创建副本以避免SettingWithCopyWarning
-                sub_group.loc[:, 'timeconsume'] = sub_group['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
-                sub_group.loc[:, 'timeconsume'] = pd.to_numeric(sub_group['timeconsume'], errors='coerce')
+                sub_group['timeconsume'] = pd.to_numeric(sub_group['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
                 sub_avg_time_consume = sub_group['timeconsume'].mean()
                 
                 sub_knowledge_mastery[sub_knowledge] = {
@@ -169,12 +167,12 @@ class AnalysisService:
         
         # 转换时间戳为datetime对象
         submissions = submissions.copy()  # 创建副本以避免SettingWithCopyWarning
-        submissions.loc[:, 'datetime'] = pd.to_datetime(submissions['time'], unit='s')
+        submissions['datetime'] = pd.to_datetime(submissions['time'], unit='s')
         
         # 提取时间特征
-        submissions.loc[:, 'hour'] = submissions['datetime'].dt.hour
-        submissions.loc[:, 'day'] = submissions['datetime'].dt.day
-        submissions.loc[:, 'weekday'] = submissions['datetime'].dt.weekday
+        submissions['hour'] = submissions['datetime'].dt.hour
+        submissions['day'] = submissions['datetime'].dt.day
+        submissions['weekday'] = submissions['datetime'].dt.weekday
         
         # 分析答题高峰时段
         hour_counts = submissions.groupby('hour').size().reset_index(name='count')
@@ -190,8 +188,7 @@ class AnalysisService:
         
         # 分析平均答题时间
         # 处理异常值，如"--"或"-"等非数值
-        submissions.loc[:, 'timeconsume'] = submissions['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
-        submissions.loc[:, 'timeconsume'] = pd.to_numeric(submissions['timeconsume'], errors='coerce')
+        submissions['timeconsume'] = pd.to_numeric(submissions['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
         avg_time_consume = submissions['timeconsume'].mean()
         
         # 分析内存使用情况
@@ -219,8 +216,7 @@ class AnalysisService:
             
             # 处理所有学生的timeconsume数据中的异常值
             all_submissions_copy = all_submissions.copy()
-            all_submissions_copy.loc[:, 'timeconsume'] = all_submissions_copy['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
-            all_submissions_copy.loc[:, 'timeconsume'] = pd.to_numeric(all_submissions_copy['timeconsume'], errors='coerce')
+            all_submissions_copy['timeconsume'] = pd.to_numeric(all_submissions_copy['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
             all_students_avg_time = all_submissions_copy['timeconsume'].mean()
             
             # 计算相对表现
@@ -264,10 +260,18 @@ class AnalysisService:
         for title_id, group in all_submissions.groupby('title_ID'):
             # 计算该题目的提交次数和正确提交次数
             total_submissions = len(group)
-            correct_submissions = len(group[group['state'] == 'Absolutely_Correct'])
             
-            # 计算正确率
-            correct_rate = correct_submissions / total_submissions if total_submissions > 0 else 0
+            # 根据不同状态计算得分
+            total_score = 0
+            for _, submission in group.iterrows():
+                if submission['state'] == 'Absolutely_Correct':
+                    total_score += 3 
+                elif submission['state'] == 'Partially_Correct':
+                    total_score += submission['score']
+            
+            # 计算平均得分率（总分/最大可能分数）
+            max_possible_score = total_submissions * 3 
+            correct_rate = total_score / max_possible_score if max_possible_score > 0 else 0
             
             # 计算平均用时和平均内存使用
             group_copy = group.copy()
@@ -294,12 +298,9 @@ class AnalysisService:
                 'avg_time_consume': avg_time_consume,
                 'avg_memory': avg_memory,
                 'total_submissions': total_submissions,
-                'correct_submissions': correct_submissions,
-                'score': score,
-                'knowledge': knowledge,
-                'sub_knowledge': sub_knowledge
+                'total_score': total_score,
             }
-        
+
         # 分析学生的知识掌握程度
         student_knowledge = {}
         for student_id, group in all_submissions.groupby('student_ID'):
@@ -349,3 +350,190 @@ class AnalysisService:
             'question_difficulty': question_difficulty,
             'unreasonable_questions': unreasonable_questions
         }
+    def detect_learning_status(self, correct_rate, time_score, memory_score, high_thr=0.85, low_thr=0.5, good_thr=0.7):
+        """返回可叠加的学习情况标签列表，水平标签有：差、一般、良好、优秀。支持用时、内存分位加权。
+        """
+        final_score = 0.7 * correct_rate + 0.15 * time_score + 0.15 * memory_score
+        if final_score >= high_thr:
+            tag = ['优秀']
+        elif final_score >= good_thr:
+            tag = ['良好']
+        elif final_score >= low_thr:
+            tag = ['一般']
+        else:
+            tag = ['差']
+        return final_score, tag
+
+    def detect_learning_trend(self, prev_score, curr_score, progress_thr=0.15, decline_thr=0.1):
+        """返回进步/退步标签，基于前后两个加权分数的变化"""
+        tags = []
+        diff = curr_score - prev_score
+        if diff > progress_thr:
+            tags.append('进步')
+        elif diff < -decline_thr:
+            tags.append('退步')
+        return tags     
+
+    def analyze_mastery_trend(self, student_id=None, granularity='day', group_by='knowledge'):
+        """分析对相同题目、相同子知识点、相同知识点的掌握程度变化趋势，并检测学习情况"""
+        # 获取所有提交记录
+        all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+        if all_submissions.empty:
+            return {'status': 'error', 'message': '没有找到提交记录数据'}
+        # 获取题目信息
+        questions = pd.DataFrame(self.data_service.get_questions())
+        if questions.empty:
+            return {'status': 'error', 'message': '没有找到题目数据'}
+        # 过滤学生
+        if student_id:
+            submissions = all_submissions[all_submissions['student_ID'] == student_id]
+            if submissions.empty:
+                return {'status': 'error', 'message': f'没有找到学生 {student_id} 的提交记录'}
+        else:
+            submissions = all_submissions
+        # 合并题目信息
+        merged = pd.merge(submissions, questions, on='title_ID', how='left')
+        # 处理时间
+        merged = merged.copy()
+        merged.loc[:, 'datetime'] = pd.to_datetime(merged['time'], unit='s')
+        # 处理异常值
+        merged['timeconsume'] = pd.to_numeric(merged['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+        merged.loc[:, 'score_x'] = pd.to_numeric(merged['score_x'], errors='coerce')
+        # 时间分组
+        if granularity == 'day':
+            merged['time_group'] = merged['datetime'].dt.date
+        elif granularity == 'week':
+            merged['time_group'] = merged['datetime'].dt.strftime('%Y-W%U')
+        elif granularity == 'month':
+            merged['time_group'] = merged['datetime'].dt.strftime('%Y-%m')
+        elif granularity == 'submission':
+            merged = merged.sort_values('datetime')
+            merged['time_group'] = range(1, len(merged) + 1)
+        else:
+            return {'status': 'error', 'message': '不支持的时间粒度'}
+        
+        
+        # 统计函数
+        def calc_trend(df):
+            avg_res = self.analyze_avg_practice_curve(group_by=group_by)
+            avg_curve = avg_res['avg_curve_by_%s' % group_by]
+            avg_time_curve = avg_res['avg_time_curve_by_%s' % group_by]
+            avg_memory_curve = avg_res['avg_memory_curve_by_%s' % group_by]
+            trend = {}
+            for key, group in df.groupby(group_by):
+                group_trend = []
+                scores = []
+                counts = 0
+                for tg, tg_group in group.groupby('time_group'):
+                    total = len(tg_group)
+                    correct = len(tg_group[tg_group['state'] == 'Absolutely_Correct'])
+                    correct_rate = correct / total if total > 0 else 0
+                    time_costs = tg_group['timeconsume'].tolist()
+                    memory_costs = tg_group['memory'].tolist()
+                    avg_time = float(np.nanmean(time_costs)) if time_costs else None
+                    avg_memory = float(np.nanmean(memory_costs)) if memory_costs else None
+                    # 计算与平均用时曲线的对比得分
+                    avg_time_curve_val = float(np.nanmean([avg_time_curve[key][counts - 1 + i] for i in range(total)])) 
+                    time_score = 1 - avg_time / avg_time_curve_val
+                    # 计算与平均内存曲线的对比得分
+                    avg_memory_curve_val = float(np.nanmean([avg_memory_curve[key][counts - 1 + i] for i in range(total)])) 
+                    memory_score = 1 - avg_memory / avg_memory_curve_val
+                    cur_score, point_learning_status = self.detect_learning_status(correct_rate, time_score, memory_score)
+                    if len(scores) > 1:
+                        point_learning_trend = self.detect_learning_trend(scores[-2], cur_score)
+                    else:
+                        point_learning_trend = []
+
+                    group_trend.append({    
+                        'time': str(tg),
+                        'learning_status': point_learning_status,
+                        'learning_trend': point_learning_trend
+                    })
+                    counts += total
+                    scores.append(cur_score)
+                trend[key] = {
+                    'trend': group_trend,
+                }
+            return trend
+        
+        group_result = calc_trend(merged)
+        
+        return {
+            'status': 'success',
+            'student_id': student_id,
+            'granularity': granularity,
+            'trend_by_%s' % group_by: group_result
+        }
+
+    def analyze_avg_practice_curve(self, student_id=None, group_by='title_ID'):
+        """计算每道题/知识点/子知识点平均每个学生第x次练习的正确率曲线、耗时曲线和内存曲线（正确率按状态得分）"""
+        # 获取所有提交记录
+        all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+        if all_submissions.empty:
+            return {'status': 'error', 'message': '没有找到提交记录数据'}
+        # 获取题目信息
+        questions = pd.DataFrame(self.data_service.get_questions())
+        if questions.empty:
+            return {'status': 'error', 'message': '没有找到题目数据'}
+        # 过滤学生
+        if student_id:
+            submissions = all_submissions[all_submissions['student_ID'] == student_id]
+            if submissions.empty:
+                return {'status': 'error', 'message': f'没有找到学生 {student_id} 的提交记录'}
+        else:
+            submissions = all_submissions
+        # 合并题目信息
+        merged = pd.merge(submissions, questions, on='title_ID', how='left')
+        merged = merged.copy()
+        merged['timeconsume'] = pd.to_numeric(merged['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+        merged['memory'] = pd.to_numeric(merged['memory'].replace(['--', '-'], np.nan), errors='coerce')
+        merged['score_x'] = pd.to_numeric(merged['score_x'], errors='coerce')
+        merged.loc[:, 'datetime'] = pd.to_datetime(merged['time'], unit='s')
+       
+        result = {}
+        
+        group_result = {}
+        time_curve_result = {}
+        memory_curve_result = {}
+        for group_value, group_df in merged.groupby(group_by):
+            # 对每个学生，统计其第x次练习的正确率、耗时和内存
+            student_curves = []
+            student_time_curves = []
+            student_memory_curves = []
+            for student_id, stu_df in group_df.groupby('student_ID'):
+                stu_df = stu_df.sort_values('datetime')
+                # 正确率按状态得分
+                def get_score(row):
+                    if row['state'] == 'Absolutely_Correct':
+                        return 1.0
+                    elif row['state'] == 'Partially_Correct':
+                        return float(row['score_x']) / 3 if not pd.isnull(row['score_x']) else 0.0
+                    else:
+                        return 0.0
+                corrects = [get_score(row) for _, row in stu_df.iterrows()]
+                times = stu_df['timeconsume'].tolist()
+                memories = stu_df['memory'].tolist()
+                student_curves.append(corrects)
+                student_time_curves.append(times)
+                student_memory_curves.append(memories)
+            if not student_curves:
+                continue
+            max_len = max(len(curve) for curve in student_curves)
+            avg_curve = []
+            avg_time_curve = []
+            avg_memory_curve = []
+            for i in range(max_len):
+                vals = [curve[i] for curve in student_curves if len(curve) > i]
+                time_vals = [curve[i] for curve in student_time_curves if len(curve) > i]
+                memory_vals = [curve[i] for curve in student_memory_curves if len(curve) > i]
+                avg_curve.append(float(np.mean(vals)) if vals else None)
+                avg_time_curve.append(float(np.nanmean(time_vals)) if time_vals else None)
+                avg_memory_curve.append(float(np.nanmean(memory_vals)) if memory_vals else None)
+            group_result[group_value] = avg_curve
+            time_curve_result[group_value] = avg_time_curve
+            memory_curve_result[group_value] = avg_memory_curve
+        result['avg_curve_by_%s' % group_by] = group_result
+        result['avg_time_curve_by_%s' % group_by] = time_curve_result
+        result['avg_memory_curve_by_%s' % group_by] = memory_curve_result
+        result['status'] = 'success'
+        return result
