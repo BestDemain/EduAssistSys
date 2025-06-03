@@ -5,6 +5,8 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from services.data_service import DataService
+import os
+import traceback
 
 class AnalysisService:
     def __init__(self):
@@ -537,3 +539,533 @@ class AnalysisService:
         result['avg_memory_curve_by_%s' % group_by] = memory_curve_result
         result['status'] = 'success'
         return result
+
+    def analyze_difficulty_mastery_match(self):
+        """分析题目难度与知识掌握程度的匹配性
+        
+        分析逻辑：
+        1. 按时间顺序分析学生的提交记录
+        2. 对每个子知识点，观察其掌握程度的变化
+        3. 当发现掌握程度高但后续题目表现差的情况时，标记为不匹配
+        
+        Returns:
+            dict: 包含不匹配的题目列表和分析结果
+        """
+        try:
+            # 获取所有提交记录和题目信息
+            all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+            questions = pd.DataFrame(self.data_service.get_questions())
+            
+            if all_submissions.empty or questions.empty:
+                return {'status': 'error', 'message': '没有找到必要的数据'}
+            
+            # 合并提交记录和题目信息
+            merged_data = pd.merge(all_submissions, questions, on='title_ID', how='left')
+            
+            # 按时间排序
+            merged_data['time'] = pd.to_datetime(merged_data['time'], unit='s')
+            merged_data = merged_data.sort_values('time')
+            
+            # 计算每个子知识点的掌握程度变化
+            subknowledge_mastery = {}
+            unmatched_questions = []
+            
+            # 按子知识点分组
+            for sub_knowledge, group in merged_data.groupby('sub_knowledge'):
+                # 按时间窗口计算掌握程度
+                window_size = 15  # 每15道题作为一个时间窗口，增加稳定性
+                mastery_windows = []
+                
+                # 计算每个时间窗口的掌握程度
+                for i in range(0, len(group), window_size):
+                    window = group.iloc[i:i+window_size]
+                    if len(window) == 0:
+                        continue
+                    
+                    # 计算该窗口的掌握程度
+                    total_score = 0
+                    earned_score = 0
+                    for _, submission in window.iterrows():
+                        if submission['state'] == 'Absolutely_Correct':
+                            total_score += 3
+                            earned_score += 3
+                        elif submission['state'] == 'Partially_Correct':
+                            total_score += 3
+                            earned_score += submission['score_x']
+                        else:
+                            total_score += 3
+                    
+                    mastery = earned_score / total_score if total_score > 0 else 0
+                    mastery_windows.append({
+                        'time': window.iloc[-1]['time'],
+                        'mastery': mastery,
+                        'submissions': window
+                    })
+                
+                # 分析每个时间窗口后的题目表现
+                for i in range(len(mastery_windows)-1):
+                    current_window = mastery_windows[i]
+                    next_window = mastery_windows[i+1]
+                    
+                    # 如果当前窗口的掌握程度较高（>0.8）
+                    if current_window['mastery'] > 0.8:
+                        # 检查下一个窗口的题目表现
+                        next_total_score = 0
+                        next_earned_score = 0
+                        for _, submission in next_window['submissions'].iterrows():
+                            if submission['state'] == 'Absolutely_Correct':
+                                next_total_score += 3
+                                next_earned_score += 3
+                            elif submission['state'] == 'Partially_Correct':
+                                next_total_score += 3
+                                next_earned_score += submission['score_x']
+                            else:
+                                next_total_score += 3
+                        
+                        next_mastery = next_earned_score / next_total_score if next_total_score > 0 else 0
+                        
+                        # 如果下一个窗口的表现显著下降（下降超过50%）
+                        if next_mastery < current_window['mastery'] * 0.5:
+                            # 获取下一个窗口的题目信息
+                            next_questions = next_window['submissions']['title_ID'].unique()
+                            for title_id in next_questions:
+                                question_info = questions[questions['title_ID'] == title_id].iloc[0]
+                                unmatched_questions.append({
+                                    'title_id': title_id,
+                                    'title_name': question_info['title_name'] if 'title_name' in question_info else '未知',
+                                    'sub_knowledge': sub_knowledge,
+                                    'knowledge': question_info['knowledge'],
+                                    'previous_mastery': current_window['mastery'],
+                                    'current_mastery': next_mastery,
+                                    'mastery_drop': current_window['mastery'] - next_mastery,
+                                    'total_submissions': len(next_window['submissions']),
+                                    'correct_submissions': len(next_window['submissions'][next_window['submissions']['state'] == 'Absolutely_Correct']),
+                                    'partially_correct_submissions': len(next_window['submissions'][next_window['submissions']['state'] == 'Partially_Correct']),
+                                    'error_submissions': len(next_window['submissions'][next_window['submissions']['state'].str.startswith('Error')]),
+                                    'reason': '学生知识掌握程度较高但题目表现较差'
+                                })
+                
+                # 存储该子知识点的掌握程度数据
+                subknowledge_mastery[sub_knowledge] = {
+                    'windows': mastery_windows,
+                    'unmatched_count': len([q for q in unmatched_questions if q['sub_knowledge'] == sub_knowledge])
+                }
+            
+            # 按掌握程度下降幅度排序
+            unmatched_questions.sort(key=lambda x: x['mastery_drop'], reverse=True)
+            
+            # 保存分析结果到CSV文件
+            result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Result')
+            if not os.path.exists(result_dir):
+                os.makedirs(result_dir)
+            
+            # 将结果转换为DataFrame并保存为CSV
+            df = pd.DataFrame(unmatched_questions)
+            csv_path = os.path.join(result_dir, 'difficulty_mastery_analysis.csv')
+            df.to_csv(csv_path, index=False, encoding='utf-8')
+            
+            return {
+                'status': 'success',
+                'data': {
+                    'subknowledge_mastery': subknowledge_mastery,
+                    'unmatched_questions': unmatched_questions,
+                    'total_analyzed': len(merged_data['sub_knowledge'].unique()),
+                    'unmatched_count': len(unmatched_questions)
+                },
+                'metadata': {
+                    'file_path': csv_path
+                }
+            }
+            
+        except Exception as e:
+            print(f"分析过程中发生错误: {str(e)}")
+            return {
+                'status': 'error',
+                'message': f'分析过程中发生错误: {str(e)}'
+            }
+
+    def generate_mastery_files(self, student_id=None, file_types=None):
+        """生成掌握程度分析结果文件
+        
+        Args:
+            student_id: 学生ID，如果为None则分析所有学生
+            file_types: 要生成的文件类型列表，如果为None则生成所有类型
+                      可选值：['student_title', 'student_subknowledge', 'student_knowledge',
+                             'title', 'subknowledge', 'knowledge']
+        
+        Returns:
+            dict: 包含生成文件的状态和路径
+        """
+        try:
+            print("开始生成掌握程度分析文件...")
+            
+            # 创建Result文件夹（如果不存在）
+            result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Result')
+            print(f"Result目录路径: {result_dir}")
+            if not os.path.exists(result_dir):
+                try:
+                    os.makedirs(result_dir)
+                    print("创建Result目录")
+                except Exception as e:
+                    print(f"创建Result目录失败: {str(e)}")
+                    return {
+                        'status': 'error',
+                        'message': f'创建Result目录失败: {str(e)}'
+                    }
+            
+            # 获取所有提交记录和题目信息
+            print("获取提交记录和题目信息...")
+            all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+            questions = pd.DataFrame(self.data_service.get_questions())
+            
+            print(f"获取到 {len(all_submissions)} 条提交记录")
+            print(f"获取到 {len(questions)} 条题目信息")
+            
+            if all_submissions.empty or questions.empty:
+                print("错误：没有找到必要的数据")
+                return {
+                    'status': 'error',
+                    'message': '没有找到必要的数据'
+                }
+            
+            # 如果指定了学生ID，则只分析该学生的数据
+            if student_id:
+                all_submissions = all_submissions[all_submissions['student_ID'] == student_id]
+                if all_submissions.empty:
+                    return {
+                        'status': 'error',
+                        'message': f'没有找到学生 {student_id} 的提交记录'
+                    }
+            
+            # 合并提交记录和题目信息
+            print("合并提交记录和题目信息...")
+            merged_data = pd.merge(all_submissions, questions, on='title_ID', how='left')
+            print(f"合并后的数据条数: {len(merged_data)}")
+            
+            # 处理时间数据
+            merged_data['timeconsume'] = pd.to_numeric(merged_data['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+            
+            # 定义要生成的文件类型
+            if file_types is None:
+                file_types = ['student_title', 'student_subknowledge', 'student_knowledge',
+                            'title', 'subknowledge', 'knowledge']
+            
+            generated_files = []
+            
+            # 生成每个学生对每个题目的掌握程度
+            if 'student_title' in file_types:
+                try:
+                    print("生成每个学生对每个题目的掌握程度...")
+                    student_title_mastery = []
+                    for student_id, group in merged_data.groupby('student_ID'):
+                        for title_id, title_group in group.groupby('title_ID'):
+                            # 计算该题目的掌握程度
+                            total_score = 0
+                            earned_score = 0
+                            time_consumes = []
+                            for _, submission in title_group.iterrows():
+                                if submission['state'] == 'Absolutely_Correct':
+                                    total_score += 3
+                                    earned_score += 3
+                                elif submission['state'] == 'Partially_Correct':
+                                    total_score += 3
+                                    earned_score += submission['score_x']
+                                else:
+                                    total_score += 3
+                                if not pd.isna(submission['timeconsume']):
+                                    time_consumes.append(submission['timeconsume'])
+                            
+                            mastery = earned_score / total_score if total_score > 0 else 0
+                            avg_time = np.mean(time_consumes) if time_consumes else None
+                            
+                            student_title_mastery.append({
+                                'Student_ID': student_id,
+                                'ID': title_id,
+                                'Mastery': mastery,
+                                'Avg_Time': avg_time,
+                                'Submission_Count': len(title_group)
+                            })
+                    
+                    print(f"生成了 {len(student_title_mastery)} 条题目掌握程度记录")
+                    file_path = os.path.join(result_dir, 'student_title_mastery.csv')
+                    pd.DataFrame(student_title_mastery).to_csv(file_path, index=False, encoding='utf-8')
+                    generated_files.append('student_title_mastery.csv')
+                except Exception as e:
+                    print(f"生成学生题目掌握程度文件时出错: {str(e)}")
+                    pass
+            
+            # 生成每个学生对每个子知识点的掌握程度
+            if 'student_subknowledge' in file_types:
+                try:
+                    print("生成每个学生对每个子知识点的掌握程度...")
+                    student_subknowledge_mastery = []
+                    for student_id, group in merged_data.groupby('student_ID'):
+                        for sub_knowledge, sub_group in group.groupby('sub_knowledge'):
+                            total_score = 0
+                            earned_score = 0
+                            time_consumes = []
+                            for _, submission in sub_group.iterrows():
+                                if submission['state'] == 'Absolutely_Correct':
+                                    total_score += 3
+                                    earned_score += 3
+                                elif submission['state'] == 'Partially_Correct':
+                                    total_score += 3
+                                    earned_score += submission['score_x']
+                                else:
+                                    total_score += 3
+                                if not pd.isna(submission['timeconsume']):
+                                    time_consumes.append(submission['timeconsume'])
+                            
+                            mastery = earned_score / total_score if total_score > 0 else 0
+                            avg_time = np.mean(time_consumes) if time_consumes else None
+                            
+                            student_subknowledge_mastery.append({
+                                'Student_ID': student_id,
+                                'ID': sub_knowledge,
+                                'Mastery': mastery,
+                                'Avg_Time': avg_time,
+                                'Submission_Count': len(sub_group),
+                                'Question_Count': len(sub_group['title_ID'].unique())
+                            })
+                    
+                    print(f"生成了 {len(student_subknowledge_mastery)} 条子知识点掌握程度记录")
+                    file_path = os.path.join(result_dir, 'student_subknowledge_mastery.csv')
+                    pd.DataFrame(student_subknowledge_mastery).to_csv(file_path, index=False, encoding='utf-8')
+                    generated_files.append('student_subknowledge_mastery.csv')
+                except Exception as e:
+                    print(f"生成学生子知识点掌握程度文件时出错: {str(e)}")
+                    pass
+            
+            # 生成每个学生对每个知识点的掌握程度
+            if 'student_knowledge' in file_types:
+                try:
+                    print("生成每个学生对每个知识点的掌握程度...")
+                    student_knowledge_mastery = []
+                    for student_id, group in merged_data.groupby('student_ID'):
+                        for knowledge, k_group in group.groupby('knowledge'):
+                            # 获取该知识点下的所有子知识点
+                            sub_knowledges = k_group['sub_knowledge'].unique()
+                            
+                            # 计算每个子知识点的权重（基于题目数量）
+                            sub_knowledge_weights = {}
+                            total_questions = 0
+                            for sub_k in sub_knowledges:
+                                sub_questions = len(k_group[k_group['sub_knowledge'] == sub_k]['title_ID'].unique())
+                                sub_knowledge_weights[sub_k] = sub_questions
+                                total_questions += sub_questions
+                            
+                            # 计算加权掌握程度
+                            weighted_mastery = 0
+                            total_weight = 0
+                            time_consumes = []
+                            
+                            for sub_k, sub_group in k_group.groupby('sub_knowledge'):
+                                weight = sub_knowledge_weights[sub_k] / total_questions if total_questions > 0 else 0
+                                total_score = 0
+                                earned_score = 0
+                                
+                                for _, submission in sub_group.iterrows():
+                                    if submission['state'] == 'Absolutely_Correct':
+                                        total_score += 3
+                                        earned_score += 3
+                                    elif submission['state'] == 'Partially_Correct':
+                                        total_score += 3
+                                        earned_score += submission['score_x']
+                                    else:
+                                        total_score += 3
+                                    if not pd.isna(submission['timeconsume']):
+                                        time_consumes.append(submission['timeconsume'])
+                                
+                                sub_mastery = earned_score / total_score if total_score > 0 else 0
+                                weighted_mastery += sub_mastery * weight
+                                total_weight += weight
+                            
+                            mastery = weighted_mastery / total_weight if total_weight > 0 else 0
+                            avg_time = np.mean(time_consumes) if time_consumes else None
+                            
+                            student_knowledge_mastery.append({
+                                'Student_ID': student_id,
+                                'ID': knowledge,
+                                'Mastery': mastery,
+                                'Avg_Time': avg_time,
+                                'Submission_Count': len(k_group),
+                                'Question_Count': len(k_group['title_ID'].unique()),
+                                'Sub_Knowledge_Count': len(sub_knowledges)
+                            })
+                    
+                    print(f"生成了 {len(student_knowledge_mastery)} 条知识点掌握程度记录")
+                    file_path = os.path.join(result_dir, 'student_knowledge_mastery.csv')
+                    pd.DataFrame(student_knowledge_mastery).to_csv(file_path, index=False, encoding='utf-8')
+                    generated_files.append('student_knowledge_mastery.csv')
+                except Exception as e:
+                    print(f"生成学生知识点掌握程度文件时出错: {str(e)}")
+                    pass
+            
+            # 生成学生整体对每个题目的掌握程度
+            if 'title' in file_types:
+                try:
+                    print("生成学生整体对每个题目的掌握程度...")
+                    title_mastery = []
+                    for title_id, group in merged_data.groupby('title_ID'):
+                        total_score = 0
+                        earned_score = 0
+                        time_consumes = []
+                        for _, submission in group.iterrows():
+                            if submission['state'] == 'Absolutely_Correct':
+                                total_score += 3
+                                earned_score += 3
+                            elif submission['state'] == 'Partially_Correct':
+                                total_score += 3
+                                earned_score += submission['score_x']
+                            else:
+                                total_score += 3
+                            if not pd.isna(submission['timeconsume']):
+                                time_consumes.append(submission['timeconsume'])
+                        
+                        mastery = earned_score / total_score if total_score > 0 else 0
+                        avg_time = np.mean(time_consumes) if time_consumes else None
+                        
+                        title_mastery.append({
+                            'ID': title_id,
+                            'Mastery': mastery,
+                            'Avg_Time': avg_time,
+                            'Submission_Count': len(group),
+                            'Student_Count': len(group['student_ID'].unique())
+                        })
+                    
+                    print(f"生成了 {len(title_mastery)} 条整体题目掌握程度记录")
+                    file_path = os.path.join(result_dir, 'title_mastery.csv')
+                    pd.DataFrame(title_mastery).to_csv(file_path, index=False, encoding='utf-8')
+                    generated_files.append('title_mastery.csv')
+                except Exception as e:
+                    print(f"生成整体题目掌握程度文件时出错: {str(e)}")
+                    pass
+            
+            # 生成学生整体对每个子知识点的掌握程度
+            if 'subknowledge' in file_types:
+                try:
+                    print("生成学生整体对每个子知识点的掌握程度...")
+                    subknowledge_mastery = []
+                    for sub_knowledge, group in merged_data.groupby('sub_knowledge'):
+                        total_score = 0
+                        earned_score = 0
+                        time_consumes = []
+                        for _, submission in group.iterrows():
+                            if submission['state'] == 'Absolutely_Correct':
+                                total_score += 3
+                                earned_score += 3
+                            elif submission['state'] == 'Partially_Correct':
+                                total_score += 3
+                                earned_score += submission['score_x']
+                            else:
+                                total_score += 3
+                            if not pd.isna(submission['timeconsume']):
+                                time_consumes.append(submission['timeconsume'])
+                        
+                        mastery = earned_score / total_score if total_score > 0 else 0
+                        avg_time = np.mean(time_consumes) if time_consumes else None
+                        
+                        subknowledge_mastery.append({
+                            'ID': sub_knowledge,
+                            'Mastery': mastery,
+                            'Avg_Time': avg_time,
+                            'Submission_Count': len(group),
+                            'Question_Count': len(group['title_ID'].unique()),
+                            'Student_Count': len(group['student_ID'].unique())
+                        })
+                    
+                    print(f"生成了 {len(subknowledge_mastery)} 条整体子知识点掌握程度记录")
+                    file_path = os.path.join(result_dir, 'subknowledge_mastery.csv')
+                    pd.DataFrame(subknowledge_mastery).to_csv(file_path, index=False, encoding='utf-8')
+                    generated_files.append('subknowledge_mastery.csv')
+                except Exception as e:
+                    print(f"生成整体子知识点掌握程度文件时出错: {str(e)}")
+                    pass
+            
+            # 生成学生整体对每个知识点的掌握程度
+            if 'knowledge' in file_types:
+                try:
+                    print("生成学生整体对每个知识点的掌握程度...")
+                    knowledge_mastery = []
+                    for knowledge, k_group in merged_data.groupby('knowledge'):
+                        # 获取该知识点下的所有子知识点
+                        sub_knowledges = k_group['sub_knowledge'].unique()
+                        
+                        # 计算每个子知识点的权重（基于题目数量）
+                        sub_knowledge_weights = {}
+                        total_questions = 0
+                        for sub_k in sub_knowledges:
+                            sub_questions = len(k_group[k_group['sub_knowledge'] == sub_k]['title_ID'].unique())
+                            sub_knowledge_weights[sub_k] = sub_questions
+                            total_questions += sub_questions
+                        
+                        # 计算加权掌握程度
+                        weighted_mastery = 0
+                        total_weight = 0
+                        time_consumes = []
+                        
+                        for sub_k, sub_group in k_group.groupby('sub_knowledge'):
+                            weight = sub_knowledge_weights[sub_k] / total_questions if total_questions > 0 else 0
+                            total_score = 0
+                            earned_score = 0
+                            
+                            for _, submission in sub_group.iterrows():
+                                if submission['state'] == 'Absolutely_Correct':
+                                    total_score += 3
+                                    earned_score += 3
+                                elif submission['state'] == 'Partially_Correct':
+                                    total_score += 3
+                                    earned_score += submission['score_x']
+                                else:
+                                    total_score += 3
+                                if not pd.isna(submission['timeconsume']):
+                                    time_consumes.append(submission['timeconsume'])
+                            
+                            sub_mastery = earned_score / total_score if total_score > 0 else 0
+                            weighted_mastery += sub_mastery * weight
+                            total_weight += weight
+                        
+                        mastery = weighted_mastery / total_weight if total_weight > 0 else 0
+                        avg_time = np.mean(time_consumes) if time_consumes else None
+                        
+                        knowledge_mastery.append({
+                            'ID': knowledge,
+                            'Mastery': mastery,
+                            'Avg_Time': avg_time,
+                            'Submission_Count': len(k_group),
+                            'Question_Count': len(k_group['title_ID'].unique()),
+                            'Student_Count': len(k_group['student_ID'].unique()),
+                            'Sub_Knowledge_Count': len(sub_knowledges)
+                        })
+                    
+                    print(f"生成了 {len(knowledge_mastery)} 条整体知识点掌握程度记录")
+                    file_path = os.path.join(result_dir, 'knowledge_mastery.csv')
+                    pd.DataFrame(knowledge_mastery).to_csv(file_path, index=False, encoding='utf-8')
+                    generated_files.append('knowledge_mastery.csv')
+                except Exception as e:
+                    print(f"生成整体知识点掌握程度文件时出错: {str(e)}")
+                    pass
+            
+            print("所有文件已保存")
+            
+            return {
+                'status': 'success',
+                'data': {
+                    'generated_files': generated_files,
+                    'total_files': len(generated_files)
+                },
+                'metadata': {
+                    'student_id': student_id,
+                    'file_types': file_types,
+                    'result_dir': result_dir
+                }
+            }
+            
+        except Exception as e:
+            print(f"发生错误: {str(e)}")
+            print("错误详情:")
+            print(traceback.format_exc())
+            return {
+                'status': 'error',
+                'message': f'生成文件时发生错误: {str(e)}'
+            }

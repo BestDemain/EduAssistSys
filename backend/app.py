@@ -207,6 +207,7 @@ def delete_template(template_id):
         }), 404
 
 # 获取掌握趋势分析
+
 @app.route('/api/analysis/mastery_trend', methods=['GET'])
 def analyze_mastery_trend():
     student_id = request.args.get('student_id', None)
