@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Statistic, Spin, Alert } from 'antd';
-import { UserOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Statistic, Spin, Alert, Tooltip } from 'antd';
+import { UserOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
+import { KnowledgeTreeGraph } from '../components/D3Visualizations';
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -11,11 +12,14 @@ const Dashboard = () => {
     totalStudents: 0,
     totalQuestions: 0,
     totalSubmissions: 0,
-    correctRate: 0
+    averageMastery: 0
   });
   
   // 知识点掌握度数据
   const [knowledgeMastery, setKnowledgeMastery] = useState([]);
+  
+  // 知识点树图数据
+  const [knowledgeTreeData, setKnowledgeTreeData] = useState(null);
   
   // 学习行为数据
   const [behaviorData, setBehaviorData] = useState({
@@ -35,20 +39,27 @@ const Dashboard = () => {
         // 获取题目数据
         const questionsResponse = await axios.get('/api/questions');
         
-        // 获取提交记录数据
-        const submissionsResponse = await axios.get('/api/submissions');
+        // 获取所有班级的提交记录数据
+        const submissionsResponse = await axios.get('/api/all_submissions');
         
-        // 计算正确率
+        // 计算平均掌握程度
         const submissions = submissionsResponse.data;
-        const correctSubmissions = submissions.filter(s => s.state === 'Absolutely_Correct').length;
-        const correctRate = submissions.length > 0 ? correctSubmissions / submissions.length : 0;
+        let averageMastery = 0;
+        if (submissions.length > 0) {
+          const masteryValues = submissions
+            .filter(s => s.Mastery !== undefined && s.Mastery !== null)
+            .map(s => parseFloat(s.Mastery));
+          if (masteryValues.length > 0) {
+            averageMastery = masteryValues.reduce((sum, val) => sum + val, 0) / masteryValues.length;
+          }
+        }
         
         // 更新统计数据
         setStats({
           totalStudents: studentsResponse.data.length,
           totalQuestions: questionsResponse.data.length,
           totalSubmissions: submissions.length,
-          correctRate: correctRate
+          averageMastery: averageMastery
         });
         
         // 获取知识点掌握度分析数据
@@ -60,6 +71,9 @@ const Dashboard = () => {
             value: (value.correct_rate * 100).toFixed(2)
           }));
           setKnowledgeMastery(knowledgeArray);
+          
+          // 设置知识点树图数据
+          setKnowledgeTreeData(knowledgeData);
         }
         
         // 获取学习行为分析数据
@@ -67,11 +81,8 @@ const Dashboard = () => {
         if (behaviorResponse.data.status === 'success') {
           const behaviorProfile = behaviorResponse.data.behavior_profile;
           
-          // 处理小时分布数据
-          const hourData = behaviorProfile.peak_hours.map(item => ({
-            hour: item.hour,
-            count: item.count
-          }));
+          // 使用完整的24小时分布数据
+          const hourData = behaviorProfile.hour_distribution || [];
           
           // 处理状态分布数据
           const stateData = Object.entries(behaviorProfile.state_distribution).filter(([key, value]) => !key.match(/[^\x00-\x7F]/)).map(([key, value]) => ({
@@ -135,28 +146,76 @@ const Dashboard = () => {
   
   // 学习行为图表配置 - 小时分布
   const getHourChartOption = () => {
-    const hours = behaviorData.hourDistribution.map(item => item.hour);
-    const counts = behaviorData.hourDistribution.map(item => item.count);
+    // 确保使用完整的24小时数据
+    const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
+    const counts = Array.from({length: 24}, (_, i) => {
+      const hourData = behaviorData.hourDistribution.find(item => item.hour === i);
+      return hourData ? hourData.count : 0;
+    });
+    
+    // 根据时间段设置颜色
+    const getBarColor = (hour) => {
+      if (hour >= 6 && hour < 12) return '#52c41a'; // 上午 - 绿色
+      if (hour >= 12 && hour < 18) return '#1890ff'; // 下午 - 蓝色
+      if (hour >= 18 && hour < 22) return '#fa8c16'; // 晚上 - 橙色
+      return '#722ed1'; // 深夜/凌晨 - 紫色
+    };
+    
+    const barColors = hours.map((_, index) => getBarColor(index));
     
     return {
       title: {
-        text: '答题时间分布',
+        text: '答题时间分布（24小时，北京时间）',
         left: 'center'
       },
       tooltip: {
         trigger: 'axis',
         axisPointer: {
           type: 'shadow'
+        },
+        formatter: function(params) {
+          const hour = params[0].name.split(':')[0];
+          const count = params[0].value;
+          let period = '';
+          if (hour >= 6 && hour < 12) period = '上午';
+          else if (hour >= 12 && hour < 18) period = '下午';
+          else if (hour >= 18 && hour < 22) period = '晚上';
+          else period = '深夜/凌晨';
+          return `${params[0].name}<br/>提交次数: ${count}<br/>时段: ${period}`;
         }
+      },
+      legend: {
+        data: ['上午(6-12点)', '下午(12-18点)', '晚上(18-22点)', '深夜/凌晨(22-6点)'],
+        bottom: 0,
+        icon: 'rect',
+        itemWidth: 14,
+        itemHeight: 10,
+        textStyle: { fontSize: 12 }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '15%',
+        containLabel: true
       },
       xAxis: {
         type: 'category',
         data: hours,
-        name: '小时'
+        name: '时间（北京时间）',
+        nameLocation: 'middle',
+        nameGap: 30,
+        axisLabel: {
+          rotate: 45,
+          fontSize: 10,
+          interval: 0  // 强制显示所有标签
+        }
       },
       yAxis: {
         type: 'value',
-        name: '提交次数'
+        name: '提交次数',
+        nameLocation: 'middle',
+        nameGap: 40
       },
       series: [
         {
@@ -164,7 +223,9 @@ const Dashboard = () => {
           type: 'bar',
           data: counts,
           itemStyle: {
-            color: '#1890ff'
+            color: function(params) {
+              return barColors[params.dataIndex];
+            }
           }
         }
       ]
@@ -245,8 +306,23 @@ const Dashboard = () => {
         <Col xs={24} sm={12} md={6}>
           <Card className="stat-card">
             <Statistic
-              title="正确率"
-              value={stats.correctRate}
+              title={
+                <span>
+                  平均掌握程度
+                  <Tooltip title={
+                    <div>
+                      <div><strong>掌握程度计算方式：</strong></div>
+                      <div>• Absolutely_Correct: 1.0</div>
+                      <div>• Partially_Correct: 分数占比</div>
+                      <div>• Error1-Error9: 0.1 + 0.2 × 分数占比</div>
+                      <div>• Absolutely_Error: 0.0</div>
+                    </div>
+                  }>
+                    <InfoCircleOutlined style={{ marginLeft: 4, color: '#1890ff' }} />
+                  </Tooltip>
+                </span>
+              }
+              value={stats.averageMastery}
               precision={2}
               formatter={(value) => `${(value * 100).toFixed(2)}%`}
               prefix={<CheckCircleOutlined />}
@@ -258,16 +334,18 @@ const Dashboard = () => {
       {/* 图表 */}
       <Row gutter={16}>
         <Col xs={24} md={12}>
-          <Card className="chart-card" title="知识点掌握度分析">
-            <ReactECharts
-              option={getKnowledgeChartOption()}
-              style={{ height: '350px', width: '100%' }}
-              className="chart-container"
-            />
+          <Card className="chart-card" title="知识点掌握度树图">
+            {knowledgeTreeData && (
+              <KnowledgeTreeGraph 
+                data={knowledgeTreeData} 
+                width={500} 
+                height={350} 
+              />
+            )}
           </Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card className="chart-card" title="答题时间分布">
+          <Card className="chart-card" title="答题时间分布（北京时间）">
             <ReactECharts
               option={getHourChartOption()}
               style={{ height: '350px', width: '100%' }}

@@ -2,9 +2,11 @@
 import KnowledgeForceGraph from './KnowledgeForceGraph';
 import SubmissionTimeline from './SubmissionTimeline';
 import DifficultyScatterPlot from './DifficultyScatterPlot';
+import KnowledgeTreeGraph from './KnowledgeTreeGraph';
 
 export {
   KnowledgeForceGraph,
   SubmissionTimeline,
-  DifficultyScatterPlot
+  DifficultyScatterPlot,
+  KnowledgeTreeGraph
 };

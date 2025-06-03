@@ -9,6 +9,7 @@ frontend/dist/
 frontend/.DS_Store
 
 # 忽略后端Python相关（如果存在）
+backend/models/
 backend/__pycache__/
 backend/*.pyc
 backend/.venv/
