@@ -440,7 +440,7 @@ class AnalysisService:
                     memory_score = 1 - avg_memory / avg_memory_curve_val
                     cur_score, point_learning_status = self.detect_learning_status(correct_rate, time_score, memory_score)
                     if len(scores) > 1:
-                        point_learning_trend = self.detect_learning_trend(scores[-2], cur_score)
+                        point_learning_trend = self.detect_learning_trend(scores[-1], cur_score)
                     else:
                         point_learning_trend = []
 
