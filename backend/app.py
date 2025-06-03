@@ -207,7 +207,6 @@ def delete_template(template_id):
         }), 404
 
 # 获取掌握趋势分析
-
 @app.route('/api/analysis/mastery_trend', methods=['GET'])
 def analyze_mastery_trend():
     student_id = request.args.get('student_id', None)
@@ -228,6 +227,18 @@ def analyze_mastery_trend():
         else:
             return obj
     result = convert_np(result)
+    return jsonify(result)
+
+# 生成掌握程度分析文件
+@app.route('/api/analysis/mastery/files', methods=['GET'])
+def generate_mastery_files():
+    result = analysis_service.generate_mastery_files()
+    return jsonify(result)
+
+# 分析题目难度与知识掌握程度的匹配性
+@app.route('/api/analysis/difficulty-mastery-match', methods=['GET'])
+def analyze_difficulty_mastery_match():
+    result = analysis_service.analyze_difficulty_mastery_match()
     return jsonify(result)
 
 if __name__ == '__main__':
