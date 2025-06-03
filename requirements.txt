@@ -14,3 +14,4 @@ python-docx
 reportlab
 transformers
 torch
+openai

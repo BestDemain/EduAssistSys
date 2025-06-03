@@ -51,12 +51,16 @@ class AnalysisService:
         
         # 按知识点分组
         for knowledge, group in merged_data.groupby('knowledge'):
-            # 计算该知识点的总分和获得的分数
-            total_score = group['score_y'].sum()  # 题目总分
-            earned_score = group['score_x'].sum()  # 获得的分数
-            
-            # 计算正确率
-            correct_rate = earned_score / total_score if total_score > 0 else 0
+            # 计算该知识点的掌握程度（基于题目Mastery值的平均）
+            if 'Mastery' in group.columns:
+                # 使用题目的Mastery值计算平均掌握程度
+                mastery_values = pd.to_numeric(group['Mastery'], errors='coerce')
+                correct_rate = mastery_values.mean() if not mastery_values.isna().all() else 0
+            else:
+                # 如果没有Mastery列，回退到原来的计算方式
+                total_score = group['score_y'].sum()  # 题目总分
+                earned_score = group['score_x'].sum()  # 获得的分数
+                correct_rate = earned_score / total_score if total_score > 0 else 0
             
             # 计算该知识点的提交次数和正确提交次数
             total_submissions = len(group)
@@ -68,7 +72,8 @@ class AnalysisService:
             # 计算平均用时
             group = group.copy()  # 创建副本以避免SettingWithCopyWarning
             # 处理异常值，如"--"或"-"等非数值
-            group['timeconsume'] = pd.to_numeric(group['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+            group.loc[:, 'timeconsume'] = group['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+            group.loc[:, 'timeconsume'] = pd.to_numeric(group['timeconsume'], errors='coerce')
             avg_time_consume = group['timeconsume'].mean()
             
             # 存储该知识点的掌握情况
@@ -77,17 +82,22 @@ class AnalysisService:
                 'correct_submission_rate': float(correct_submission_rate),
                 'avg_time_consume': float(avg_time_consume),
                 'total_submissions': int(total_submissions),
-                'correct_submissions': int(correct_submissions),
-                'total_score': float(total_score),
-                'earned_score': float(earned_score)
+                'correct_submissions': int(correct_submissions)
             }
             
             # 分析该知识点的从属知识点掌握情况
             sub_knowledge_mastery = {}
             for sub_knowledge, sub_group in group.groupby('sub_knowledge'):
-                sub_total_score = sub_group['score_y'].sum()
-                sub_earned_score = sub_group['score_x'].sum()
-                sub_correct_rate = sub_earned_score / sub_total_score if sub_total_score > 0 else 0
+                # 计算从属知识点的掌握程度（基于题目Mastery值的平均）
+                if 'Mastery' in sub_group.columns:
+                    # 使用题目的Mastery值计算平均掌握程度
+                    sub_mastery_values = pd.to_numeric(sub_group['Mastery'], errors='coerce')
+                    sub_correct_rate = sub_mastery_values.mean() if not sub_mastery_values.isna().all() else 0
+                else:
+                    # 如果没有Mastery列，回退到原来的计算方式
+                    sub_total_score = sub_group['score_y'].sum()
+                    sub_earned_score = sub_group['score_x'].sum()
+                    sub_correct_rate = sub_earned_score / sub_total_score if sub_total_score > 0 else 0
                 
                 sub_total_submissions = len(sub_group)
                 sub_correct_submissions = len(sub_group[sub_group['state'] == 'Absolutely_Correct'])
@@ -95,7 +105,8 @@ class AnalysisService:
                 
                 # 处理异常值，如"--"或"-"等非数值
                 sub_group = sub_group.copy()  # 创建副本以避免SettingWithCopyWarning
-                sub_group['timeconsume'] = pd.to_numeric(sub_group['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+                sub_group.loc[:, 'timeconsume'] = sub_group['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+                sub_group.loc[:, 'timeconsume'] = pd.to_numeric(sub_group['timeconsume'], errors='coerce')
                 sub_avg_time_consume = sub_group['timeconsume'].mean()
                 
                 sub_knowledge_mastery[sub_knowledge] = {
@@ -103,9 +114,7 @@ class AnalysisService:
                     'correct_submission_rate': float(sub_correct_submission_rate),
                     'avg_time_consume': float(sub_avg_time_consume),
                     'total_submissions': int(sub_total_submissions),
-                    'correct_submissions': int(sub_correct_submissions),
-                    'total_score': float(sub_total_score),
-                    'earned_score': float(sub_earned_score)
+                    'correct_submissions': int(sub_correct_submissions)
                 }
             
             knowledge_mastery[knowledge]['sub_knowledge'] = sub_knowledge_mastery
@@ -167,17 +176,26 @@ class AnalysisService:
             submissions = all_submissions
             student_info = None
         
-        # 转换时间戳为datetime对象
+        # 转换时间戳为datetime对象（转换为北京时间 UTC+8）
         submissions = submissions.copy()  # 创建副本以避免SettingWithCopyWarning
-        submissions['datetime'] = pd.to_datetime(submissions['time'], unit='s')
+        submissions.loc[:, 'datetime'] = pd.to_datetime(submissions['time'], unit='s', utc=True)
+        # 转换为北京时间（UTC+8）
+        submissions.loc[:, 'datetime'] = submissions['datetime'].dt.tz_convert('Asia/Shanghai')
         
         # 提取时间特征
-        submissions['hour'] = submissions['datetime'].dt.hour
-        submissions['day'] = submissions['datetime'].dt.day
-        submissions['weekday'] = submissions['datetime'].dt.weekday
+        submissions.loc[:, 'hour'] = submissions['datetime'].dt.hour
+        submissions.loc[:, 'day'] = submissions['datetime'].dt.day
+        submissions.loc[:, 'weekday'] = submissions['datetime'].dt.weekday
         
-        # 分析答题高峰时段
+        # 分析答题高峰时段 - 生成完整的24小时分布
         hour_counts = submissions.groupby('hour').size().reset_index(name='count')
+        
+        # 确保包含所有24小时，没有提交的小时显示为0
+        all_hours = pd.DataFrame({'hour': range(24)})
+        hour_counts = all_hours.merge(hour_counts, on='hour', how='left').fillna(0)
+        hour_counts['count'] = hour_counts['count'].astype(int)
+        
+        # 获取前3个高峰时段（用于兼容性）
         peak_hours = hour_counts.sort_values('count', ascending=False).head(3)
         
         # 分析答题状态分布
@@ -190,7 +208,8 @@ class AnalysisService:
         
         # 分析平均答题时间
         # 处理异常值，如"--"或"-"等非数值
-        submissions['timeconsume'] = pd.to_numeric(submissions['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+        submissions.loc[:, 'timeconsume'] = submissions['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+        submissions.loc[:, 'timeconsume'] = pd.to_numeric(submissions['timeconsume'], errors='coerce')
         avg_time_consume = submissions['timeconsume'].mean()
         
         # 分析内存使用情况
@@ -203,6 +222,7 @@ class AnalysisService:
         # 构建学习行为画像
         behavior_profile = {
             'peak_hours': peak_hours.to_dict('records'),
+            'hour_distribution': hour_counts.to_dict('records'),  # 完整的24小时分布
             'state_distribution': state_distribution,
             'correct_rate': correct_rate,
             'avg_time_consume': avg_time_consume,
@@ -218,7 +238,8 @@ class AnalysisService:
             
             # 处理所有学生的timeconsume数据中的异常值
             all_submissions_copy = all_submissions.copy()
-            all_submissions_copy['timeconsume'] = pd.to_numeric(all_submissions_copy['timeconsume'].replace(['--', '-'], np.nan), errors='coerce')
+            all_submissions_copy.loc[:, 'timeconsume'] = all_submissions_copy['timeconsume'].replace(['--', '-'], np.nan).infer_objects(copy=False)
+            all_submissions_copy.loc[:, 'timeconsume'] = pd.to_numeric(all_submissions_copy['timeconsume'], errors='coerce')
             all_students_avg_time = all_submissions_copy['timeconsume'].mean()
             
             # 计算相对表现
@@ -232,8 +253,8 @@ class AnalysisService:
         
         return {
             'status': 'success',
-            'student_id': student_id,
-            'behavior_profile': behavior_profile
+            'behavior_profile': behavior_profile,
+            'student_info': student_info
         }
     
     def analyze_question_difficulty(self):
@@ -262,18 +283,10 @@ class AnalysisService:
         for title_id, group in all_submissions.groupby('title_ID'):
             # 计算该题目的提交次数和正确提交次数
             total_submissions = len(group)
+            correct_submissions = len(group[group['state'] == 'Absolutely_Correct'])
             
-            # 根据不同状态计算得分
-            total_score = 0
-            for _, submission in group.iterrows():
-                if submission['state'] == 'Absolutely_Correct':
-                    total_score += 3 
-                elif submission['state'] == 'Partially_Correct':
-                    total_score += submission['score']
-            
-            # 计算平均得分率（总分/最大可能分数）
-            max_possible_score = total_submissions * 3 
-            correct_rate = total_score / max_possible_score if max_possible_score > 0 else 0
+            # 计算正确率
+            correct_rate = correct_submissions / total_submissions if total_submissions > 0 else 0
             
             # 计算平均用时和平均内存使用
             group_copy = group.copy()
@@ -300,21 +313,23 @@ class AnalysisService:
                 'avg_time_consume': avg_time_consume,
                 'avg_memory': avg_memory,
                 'total_submissions': total_submissions,
-                'total_score': total_score,
+                'correct_submissions': correct_submissions,
+                'score': score,
+                'knowledge': knowledge,
+                'sub_knowledge': sub_knowledge
             }
-
+        
         # 分析学生的知识掌握程度
         student_knowledge = {}
         for student_id, group in all_submissions.groupby('student_ID'):
             # 合并提交记录和题目信息
             student_submissions = pd.merge(group, questions, on='title_ID', how='left')
             
-            # 按知识点分组计算掌握程度
+            # 按知识点分组计算掌握程度（使用已计算的Mastery列的平均值）
             knowledge_mastery = {}
             for knowledge, k_group in student_submissions.groupby('knowledge'):
-                total_score = k_group['score_y'].sum()
-                earned_score = k_group['score_x'].sum()
-                mastery = earned_score / total_score if total_score > 0 else 0
+                # 使用已计算好的Mastery列的平均值作为知识点掌握程度
+                mastery = k_group['Mastery'].mean() if not k_group['Mastery'].empty else 0
                 knowledge_mastery[knowledge] = mastery
             
             student_knowledge[student_id] = knowledge_mastery
