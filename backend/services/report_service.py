@@ -651,13 +651,38 @@ class ReportService:
         """
 
     def _generate_knowledge_section(self, knowledge_data):
-        """生成知识点分析公共部分"""
+        """生成知识点分析公共部分，包含可视化图表"""
         if not knowledge_data.get('knowledge_mastery'):
             return "<p>无知识点掌握数据</p>"
+        
+        # 准备图表数据
+        knowledge_names = []
+        correct_rates = []
+        submission_rates = []
+        total_submissions = []
+        correct_submissions = []
+        
+        for knowledge, data in knowledge_data['knowledge_mastery'].items():
+            knowledge_names.append(knowledge)
+            correct_rates.append(data['correct_rate'] * 100)  # 转换为百分比
+            submission_rates.append(data['correct_submission_rate'] * 100)
+            total_submissions.append(data['total_submissions'])
+            correct_submissions.append(data['correct_submissions'])
         
         html = """
         <div class='section'>
             <h2>知识点掌握情况</h2>
+            
+            <!-- 正确率柱状图 -->
+            <div class='chart-container'>
+                <canvas id='correctRateChart'></canvas>
+            </div>
+            
+            <!-- 提交次数折线图 -->
+            <div class='chart-container'>
+                <canvas id='submissionChart'></canvas>
+            </div>
+            
             <table>
                 <tr>
                     <th>知识点</th>
@@ -693,10 +718,93 @@ class ReportService:
                 html += f"<li class='weak-point'>{text}</li>"
             html += "</ul>"
         
-        html += "</div>"
+        # 添加图表JS代码
+        html += """
+        <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+        <script>
+            // 正确率柱状图
+            const correctRateCtx = document.getElementById('correctRateChart').getContext('2d');
+            new Chart(correctRateCtx, {
+                type: 'bar',
+                data: {
+                    labels: """ + str(knowledge_names) + """,
+                    datasets: [{
+                        label: '知识点正确率(%)',
+                        data: """ + str(correct_rates) + """,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: '正确率(%)'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // 提交次数折线图
+            const submissionCtx = document.getElementById('submissionChart').getContext('2d');
+            new Chart(submissionCtx, {
+                type: 'line',
+                data: {
+                    labels: """ + str(knowledge_names) + """,
+                    datasets: [
+                        {
+                            label: '总提交次数',
+                            data: """ + str(total_submissions) + """,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.1
+                        },
+                        {
+                            label: '正确提交次数',
+                            data: """ + str(correct_submissions) + """,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '提交次数'
+                            }
+                        }
+                    }
+                }
+            });
+        </script>
+        
+        <style>
+            .chart-container {
+                position: relative;
+                height: 300px;
+                margin-bottom: 30px;
+            }
+            .weak-point {
+                color: red;
+                margin-bottom: 8px;
+            }
+        </style>
+        </div>
+        """
         return html
-    
-
 
     # def _generate_html_knowledge_report(self, analysis_result, file_path, content=None):
     #     """生成HTML格式的知识点掌握报告"""
@@ -833,7 +941,7 @@ class ReportService:
             html = self._generate_html_header("学习行为分析报告", student_id)
             
             # 添加行为分析部分
-            behavior_data = {'behavior_profile': analysis_result}
+            behavior_data = analysis_result.get('behavior', {})
             html += self._generate_behavior_section(behavior_data)
             
             # 结束HTML
@@ -862,7 +970,7 @@ class ReportService:
             html = self._generate_html_header("题目难度分析报告", student_id)
             
             # 添加难度分析部分
-            difficulty_data = {'question_difficulty': analysis_result}
+            difficulty_data = analysis_result.get('difficulty', {})
             html += self._generate_difficulty_section(difficulty_data)
             
             # 结束HTML
@@ -886,7 +994,7 @@ class ReportService:
 
 
     def _generate_behavior_section(self, behavior_data):
-        """生成行为分析公共部分"""
+        """生成行为分析公共部分，包含可视化图表"""
         if not behavior_data.get('behavior_profile'):
             return "<p>无学习行为分析数据</p>"
         
@@ -894,7 +1002,24 @@ class ReportService:
         html = """
         <div class='section'>
             <h2>学习行为分析</h2>
+            
+            <!-- 答题时间分布图表容器 -->
+            <div class='chart-container'>
+                <canvas id='timeDistributionChart'></canvas>
+            </div>
+            
+            <!-- 答题状态分布图表容器 -->
+            <div class='chart-container'>
+                <canvas id='stateDistributionChart'></canvas>
+            </div>
         """
+        
+        # 准备图表数据
+        time_labels = []
+        time_counts = []
+        state_labels = []
+        state_counts = []
+        state_percentages = []
         
         # 答题时间分布
         if 'peak_hours' in behavior_profile:
@@ -910,6 +1035,8 @@ class ReportService:
             for item in behavior_profile['peak_hours']:
                 hour = item['hour']
                 count = item['count']
+                time_labels.append(f"{hour}:00-{int(hour)+1}:00")
+                time_counts.append(count)
                 html += f"""
                     <tr>
                         <td>{hour}:00-{int(hour)+1}:00</td>
@@ -931,9 +1058,12 @@ class ReportService:
                     </tr>
             """
             
+            total = sum(behavior_profile['state_distribution'].values())
             for state, count in behavior_profile['state_distribution'].items():
-                total = sum(behavior_profile['state_distribution'].values())
                 percentage = count / total if total > 0 else 0
+                state_labels.append(state)
+                state_counts.append(count)
+                state_percentages.append(percentage)
                 html += f"""
                     <tr>
                         <td>{state}</td>
@@ -954,7 +1084,147 @@ class ReportService:
         else:
             html += "<li>无法生成行为模式分析，数据不足。</li>"
         
-        html += "</ul></div>"
+        # 添加图表JS代码
+        html += """
+        <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+        <script>
+            // 答题时间分布柱状图
+            const timeCtx = document.getElementById('timeDistributionChart').getContext('2d');
+            new Chart(timeCtx, {
+                type: 'bar',
+                data: {
+                    labels: """ + str(time_labels) + """,
+                    datasets: [{
+                        label: '提交次数',
+                        data: """ + str(time_counts) + """,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '答题时间分布',
+                            font: {
+                                size: 16
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '提交次数'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '时间段'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // 答题状态分布饼图
+            const stateCtx = document.getElementById('stateDistributionChart').getContext('2d');
+            new Chart(stateCtx, {
+                type: 'pie',
+                data: {
+                    labels: """ + str(state_labels) + """,
+                    datasets: [{
+                        data: """ + str(state_counts) + """,
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.7)',
+                            'rgba(54, 162, 235, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(75, 192, 192, 0.7)',
+                            'rgba(153, 102, 255, 0.7)',
+                            'rgba(255, 159, 64, 0.7)',
+                            'rgba(199, 199, 199, 0.7)',
+                            'rgba(83, 102, 255, 0.7)',
+                            'rgba(40, 159, 64, 0.7)',
+                            'rgba(210, 99, 132, 0.7)',
+                            'rgba(100, 162, 235, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(153, 102, 255, 1)',
+                            'rgba(255, 159, 64, 1)',
+                            'rgba(199, 199, 199, 1)',
+                            'rgba(83, 102, 255, 1)',
+                            'rgba(40, 159, 64, 1)',
+                            'rgba(210, 99, 132, 1)',
+                            'rgba(100, 162, 235, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '答题状态分布',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = Math.round((value / total) * 100);
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
+                            }
+                        },
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12
+                            }
+                        }
+                    }
+                }
+            });
+        </script>
+        
+        <style>
+            .chart-container {
+                position: relative;
+                height: 400px;
+                margin-bottom: 40px;
+            }
+            .section table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            .section th, .section td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            .section th {
+                background-color: #f2f2f2;
+            }
+            .section ul {
+                padding-left: 20px;
+            }
+        </style>
+        </div>
+        """
         return html
 
     def _generate_behavior_patterns(self, behavior_profile):
@@ -1010,21 +1280,13 @@ class ReportService:
         html = """
         <div class='section'>
             <h2>题目难度分析</h2>
+            <!-- 添加Chart.js库 -->
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         """
         
         question_difficulty = difficulty_data['question_difficulty']
         
         # 难度分布
-        html += "<h3>题目难度分布</h3>"
-        html += """
-            <table>
-                <tr>
-                    <th>难度级别</th>
-                    <th>题目数量</th>
-                    <th>百分比</th>
-                </tr>
-        """
-        
         difficulty_levels = {'简单': 0, '中等': 0, '困难': 0}
         
         for title_id, data in question_difficulty.items():
@@ -1036,6 +1298,40 @@ class ReportService:
                 difficulty_levels['困难'] += 1
         
         total = sum(difficulty_levels.values())
+        
+        # 难度分布饼图
+        html += """
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+            <div style="width: 45%;">
+                <h3>题目难度分布</h3>
+                <canvas id="difficultyChart"></canvas>
+            </div>
+        """
+        
+        # 异常题目分析
+        unreasonable_questions = difficulty_data.get('unreasonable_questions', [])
+        
+        # 异常题目正确率分布柱状图
+        if unreasonable_questions:
+            html += """
+            <div style="width: 45%;">
+                <h3>异常题目正确率分布</h3>
+                <canvas id="unreasonableChart"></canvas>
+            </div>
+            """
+        
+        html += "</div>"
+        
+        # 难度分布表格
+        html += """
+            <table>
+                <tr>
+                    <th>难度级别</th>
+                    <th>题目数量</th>
+                    <th>百分比</th>
+                </tr>
+        """
+        
         for level, count in difficulty_levels.items():
             percentage = count / total if total > 0 else 0
             html += f"""
@@ -1048,8 +1344,7 @@ class ReportService:
         
         html += "</table>"
         
-        # 异常题目分析
-        unreasonable_questions = difficulty_data.get('unreasonable_questions', [])
+        # 异常题目分析表格
         if unreasonable_questions:
             html += "<h3>难度异常题目分析</h3>"
             html += """
@@ -1088,7 +1383,115 @@ class ReportService:
         else:
             html += "<li>无难度建议</li>"
         
-        html += "</ul></div>"
+        html += "</ul>"
+        
+        # 添加图表渲染脚本
+        html += """
+        <script>
+            // 难度分布饼图
+            const difficultyCtx = document.getElementById('difficultyChart');
+            new Chart(difficultyCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['简单', '中等', '困难'],
+                    datasets: [{
+                        data: ["""
+        html += f"{difficulty_levels['简单']}, {difficulty_levels['中等']}, {difficulty_levels['困难']}"
+        html += """],
+                        backgroundColor: [
+                            'rgba(75, 192, 192, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(255, 99, 132, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(255, 99, 132, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = Math.round((value / total) * 100);
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        """
+        
+        if unreasonable_questions:
+            # 准备异常题目正确率数据
+            correct_rates = [q['correct_rate'] for q in unreasonable_questions]
+            knowledge_points = list(set(q['knowledge'] for q in unreasonable_questions))
+            avg_rates_by_knowledge = []
+            
+            for knowledge in knowledge_points:
+                rates = [q['correct_rate'] for q in unreasonable_questions if q['knowledge'] == knowledge]
+                avg_rate = sum(rates) / len(rates) if rates else 0
+                avg_rates_by_knowledge.append(avg_rate)
+            
+            html += """
+                // 异常题目正确率柱状图
+                const unreasonableCtx = document.getElementById('unreasonableChart');
+                new Chart(unreasonableCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: """
+            html += str(knowledge_points).replace("'", '"')
+            html += """,
+                        datasets: [{
+                            label: '平均正确率',
+                            data: """
+            html += str(avg_rates_by_knowledge)
+            html += """,
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return (value * 100).toFixed(0) + '%';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return '平均正确率: ' + (context.raw * 100).toFixed(2) + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            """
+        
+        html += """
+        </script>
+        </div>
+        """
         return html
 
     def _generate_difficulty_suggestions(self, difficulty_levels, unreasonable_questions):
