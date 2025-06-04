@@ -339,7 +339,7 @@ const DifficultyAnalysis = () => {
           {/* D3.js题目难度散点图 */}
           <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
             <Col span={24}>
-              <Card title="题目难度与正确率关系图 (D3可视化)">
+              <Card title="题目难度与正确率关系图">
                 <DifficultyScatterPlot 
                   data={Object.values(difficultyData).map(item => ({
                     title_id: item.title_id,

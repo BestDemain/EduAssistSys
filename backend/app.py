@@ -63,6 +63,13 @@ def analyze_knowledge():
     result = analysis_service.analyze_knowledge_mastery(student_id)
     return jsonify(result)
 
+# 知识点掌握度时序数据
+@app.route('/api/analysis/knowledge/timeseries', methods=['GET'])
+def analyze_knowledge_timeseries():
+    student_id = request.args.get('student_id', None)
+    result = analysis_service.analyze_knowledge_mastery_timeseries(student_id)
+    return jsonify(result)
+
 # 学习行为模式分析
 @app.route('/api/analysis/behavior', methods=['GET'])
 def analyze_behavior():

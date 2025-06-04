@@ -79,6 +79,7 @@ class AnalysisService:
             # 存储该知识点的掌握情况
             knowledge_mastery[knowledge] = {
                 'correct_rate': float(correct_rate),
+                'mastery_level': float(correct_rate),  # 掌握程度，与correct_rate相同但语义更明确
                 'correct_submission_rate': float(correct_submission_rate),
                 'avg_time_consume': float(avg_time_consume),
                 'total_submissions': int(total_submissions),
@@ -111,6 +112,7 @@ class AnalysisService:
                 
                 sub_knowledge_mastery[sub_knowledge] = {
                     'correct_rate': float(sub_correct_rate),
+                    'mastery_level': float(sub_correct_rate),  # 掌握程度，与correct_rate相同但语义更明确
                     'correct_submission_rate': float(sub_correct_submission_rate),
                     'avg_time_consume': float(sub_avg_time_consume),
                     'total_submissions': int(sub_total_submissions),
@@ -139,11 +141,137 @@ class AnalysisService:
                         'reason': '从属知识点正确率较低'
                     })
         
+        # 计算全体学生的平均掌握程度和平均正确提交率
+        overall_averages = {}
+        if not student_id:  # 如果分析的是所有学生，计算平均值
+            for knowledge, data in knowledge_mastery.items():
+                overall_averages[knowledge] = {
+                    'avg_mastery_level': data['mastery_level'],
+                    'avg_correct_submission_rate': data['correct_submission_rate']
+                }
+        else:  # 如果分析的是单个学生，需要获取全体学生的平均值
+            all_result = self.analyze_knowledge_mastery(None)
+            if all_result['status'] == 'success':
+                for knowledge, data in all_result['knowledge_mastery'].items():
+                    overall_averages[knowledge] = {
+                        'avg_mastery_level': data['mastery_level'],
+                        'avg_correct_submission_rate': data['correct_submission_rate']
+                    }
+        
         return {
             'status': 'success',
             'student_id': student_id,
             'knowledge_mastery': knowledge_mastery,
+            'overall_averages': overall_averages,
             'weak_points': weak_points
+        }
+    
+    def analyze_knowledge_mastery_timeseries(self, student_id=None):
+        """分析知识点掌握程度的时序变化
+        
+        Args:
+            student_id: 学生ID，如果为None则分析所有学生的平均情况
+            
+        Returns:
+            知识点掌握度时序分析结果
+        """
+        # 获取所有提交记录
+        all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+        if all_submissions.empty:
+            return {'status': 'error', 'message': '没有找到提交记录数据'}
+        
+        # 获取题目信息
+        questions = pd.DataFrame(self.data_service.get_questions())
+        if questions.empty:
+            return {'status': 'error', 'message': '没有找到题目数据'}
+        
+        # 如果指定了学生ID，则只分析该学生的数据
+        if student_id:
+            submissions = all_submissions[all_submissions['student_ID'] == student_id]
+            if submissions.empty:
+                return {'status': 'error', 'message': f'没有找到学生 {student_id} 的提交记录'}
+        else:
+            submissions = all_submissions
+        
+        # 合并提交记录和题目信息
+        merged_data = pd.merge(submissions, questions, on='title_ID', how='left')
+        
+        # 处理缺失值和无效值
+        merged_data = merged_data.copy()
+        # 过滤掉无效的知识点和子知识点
+        merged_data = merged_data[merged_data['knowledge'].notna() & (merged_data['knowledge'] != '')]
+        merged_data.loc[merged_data['sub_knowledge'].isna() | (merged_data['sub_knowledge'] == ''), 'sub_knowledge'] = '未分类'
+        
+        # 转换时间戳为datetime对象（转换为北京时间 UTC+8）
+        merged_data.loc[:, 'datetime'] = pd.to_datetime(merged_data['time'], unit='s', utc=True)
+        # 转换为北京时间
+        merged_data.loc[:, 'datetime'] = merged_data['datetime'].dt.tz_convert('Asia/Shanghai')
+        
+        # 按时间排序
+        merged_data = merged_data.sort_values('datetime')
+        
+        # 计算时序掌握度数据
+        timeseries_data = {}
+        
+        # 按知识点分组
+        for knowledge, knowledge_group in merged_data.groupby('knowledge'):
+            # 跳过无效的知识点
+            if not knowledge or knowledge == 'undefined' or knowledge == '未知':
+                continue
+                
+            knowledge_timeline = []
+            sub_knowledge_data = {}
+            
+            # 直接使用CSV中的Mastery字段作为掌握度
+            for idx, row in knowledge_group.iterrows():
+                # 使用CSV中的Mastery字段
+                mastery_level = float(row['Mastery']) if not pd.isnull(row['Mastery']) else 0.0
+                
+                knowledge_timeline.append({
+                    'timestamp': int(row['time']),
+                    'mastery_level': float(mastery_level),  # 直接使用Mastery字段
+                    'state': row['state'],
+                    'score': float(row['score_x']) if not pd.isnull(row['score_x']) else 0
+                })
+            
+            # 计算子知识点的时序掌握度
+            for sub_knowledge, sub_group in knowledge_group.groupby('sub_knowledge'):
+                # 跳过无效的子知识点
+                if not sub_knowledge or sub_knowledge == 'undefined' or sub_knowledge == '未知':
+                    continue
+                    
+                sub_timeline = []
+                sub_cumulative_correct = 0
+                sub_cumulative_total = 0
+                
+                for idx, row in sub_group.iterrows():
+                    # 直接使用CSV中的Mastery字段
+                    sub_mastery_level = float(row['Mastery']) if not pd.isnull(row['Mastery']) else 0.0
+                    
+                    sub_timeline.append({
+                        'timestamp': int(row['time']),
+                        'mastery_level': float(sub_mastery_level),  # 直接使用Mastery字段
+                        'state': row['state'],
+                        'score': float(row['score_x']) if not pd.isnull(row['score_x']) else 0
+                    })
+                
+                # 只有当时间线有数据时才添加
+                if sub_timeline:
+                    sub_knowledge_data[sub_knowledge] = {
+                        'timeline': sub_timeline
+                    }
+            
+            # 只有当时间线有数据时才添加
+            if knowledge_timeline:
+                timeseries_data[knowledge] = {
+                    'timeline': knowledge_timeline,
+                    'sub_knowledge': sub_knowledge_data
+                }
+        
+        return {
+            'status': 'success',
+            'student_id': student_id,
+            'timeseries_data': timeseries_data
         }
     
     def analyze_learning_behavior(self, student_id=None):
@@ -351,7 +479,7 @@ class AnalysisService:
                 avg_mastery = np.mean(knowledge_mastery_levels) if knowledge_mastery_levels else 0
                 
                 # 如果学生知识掌握程度高但题目正确率低，则认为题目难度不合理
-                if avg_mastery > 0.7 and difficulty['correct_rate'] < 0.3:
+                if avg_mastery > 0.37 and difficulty['correct_rate'] < 0.3:
                     unreasonable_questions.append({
                         'title_id': title_id,
                         'correct_rate': difficulty['correct_rate'],
@@ -670,7 +798,7 @@ class AnalysisService:
             unmatched_questions.sort(key=lambda x: x['mastery_drop'], reverse=True)
             
             # 保存分析结果到CSV文件
-            result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Result')
+            result_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/Analysis_Results')
             if not os.path.exists(result_dir):
                 os.makedirs(result_dir)
             
@@ -715,7 +843,7 @@ class AnalysisService:
             print("开始生成掌握程度分析文件...")
             
             # 创建Result文件夹（如果不存在）
-            result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Result')
+            result_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/Analysis_Results')
             print(f"Result目录路径: {result_dir}")
             if not os.path.exists(result_dir):
                 try:
