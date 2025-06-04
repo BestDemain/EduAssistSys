@@ -2,23 +2,60 @@
   "id": "difficulty_default",
   "name": "题目难度分析报告模板",
   "type": "difficulty",
-  "created_at": "2025-05-07T10:48:08.053289",
+  "created_at": "2024-05-07T10:48:08.053289",
   "sections": [
     {
-      "title": "题目难度分布",
+      "title": "题目难度分布概览",
       "type": "chart",
       "chart_type": "histogram",
-      "data_source": "difficulty_distribution"
+      "data_source": "difficulty_distribution",
+      "description": "该直方图展示了题目难度的整体分布情况，反映题库的难度结构。"
+    },
+    {
+      "title": "难度与用时关系分析",
+      "type": "chart",
+      "chart_type": "scatter",
+      "data_source": "difficulty_time_scatter",
+      "description": "该散点图展示了题目正确率与平均用时的关系，帮助识别异常题目。"
+    },
+    {
+      "title": "知识点难度分布",
+      "type": "chart",
+      "chart_type": "bar",
+      "data_source": "knowledge_difficulty",
+      "description": "该图表展示了不同知识点下题目的平均难度，帮助了解知识点难度分布。"
     },
     {
       "title": "难度异常题目分析",
       "type": "table",
-      "data_source": "abnormal_questions"
+      "data_source": "abnormal_questions",
+      "description": "该表格列出了难度异常的题目，包括过难或过易的题目及其详细信息。"
+    },
+    {
+      "title": "题目难度与得分关系",
+      "type": "chart",
+      "chart_type": "bubble",
+      "data_source": "difficulty_score_relation",
+      "description": "该气泡图展示了题目难度、分值和提交次数的关系，评估题目设计合理性。"
+    },
+    {
+      "title": "难度梯度分析",
+      "type": "chart",
+      "chart_type": "heatmap",
+      "data_source": "difficulty_gradient",
+      "description": "该热力图展示了不同知识点和难度级别的题目分布情况。"
     },
     {
       "title": "难度建议",
       "type": "text",
-      "data_source": "difficulty_suggestions"
+      "data_source": "difficulty_suggestions",
+      "description": "基于难度分析结果，提供题目难度调整和题库优化的建议。"
+    },
+    {
+      "title": "题目质量评估",
+      "type": "text",
+      "data_source": "question_quality",
+      "description": "对题目的区分度、信度等质量指标进行评估，提供题目改进建议。"
     }
   ]
 }

@@ -2,24 +2,60 @@
   "id": "behavior_default",
   "name": "学习行为分析报告模板",
   "type": "behavior",
-  "created_at": "2025-05-07T10:48:08.053289",
+  "created_at": "2024-05-07T10:48:08.053289",
   "sections": [
     {
-      "title": "答题时间分布",
+      "title": "学习时间分布分析",
       "type": "chart",
       "chart_type": "bar",
-      "data_source": "peak_hours"
+      "data_source": "hour_distribution",
+      "description": "该图表展示了学生在一天24小时内的答题活跃度分布，帮助了解学习时间偏好。"
+    },
+    {
+      "title": "一周学习活跃度",
+      "type": "chart",
+      "chart_type": "bar",
+      "data_source": "week_distribution",
+      "description": "该图表展示了学生在一周内各天的学习活跃度，区分工作日和周末的学习模式。"
     },
     {
       "title": "答题状态分布",
       "type": "chart",
       "chart_type": "pie",
-      "data_source": "state_distribution"
+      "data_source": "state_distribution",
+      "description": "该饼图展示了不同答题状态（正确、错误、部分正确等）的分布比例。"
+    },
+    {
+      "title": "编程方法使用分布",
+      "type": "chart",
+      "chart_type": "pie",
+      "data_source": "method_distribution",
+      "description": "该图表展示了学生使用不同编程方法的分布情况，反映编程习惯。"
+    },
+    {
+      "title": "学习效率指标",
+      "type": "table",
+      "data_source": "efficiency_metrics",
+      "description": "该表格展示了平均答题时间、内存使用、正确率等关键学习效率指标。"
+    },
+    {
+      "title": "提交时间线分析",
+      "type": "chart",
+      "chart_type": "timeline",
+      "data_source": "submission_timeline",
+      "description": "该时间线图展示了学生的提交活动随时间的变化模式。"
     },
     {
       "title": "学习行为模式分析",
       "type": "text",
-      "data_source": "behavior_patterns"
+      "data_source": "behavior_patterns",
+      "description": "基于学习时间、答题状态等数据，分析学生的学习行为特征和模式。"
+    },
+    {
+      "title": "个性化学习建议",
+      "type": "text",
+      "data_source": "behavior_suggestions",
+      "description": "根据学习行为分析结果，提供个性化的学习时间安排和方法建议。"
     }
   ]
 }

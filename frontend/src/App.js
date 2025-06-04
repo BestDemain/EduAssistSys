@@ -10,7 +10,7 @@ import Dashboard from './pages/Dashboard';
 import KnowledgeAnalysis from './pages/KnowledgeAnalysis';
 import BehaviorAnalysis from './pages/BehaviorAnalysis';
 import DifficultyAnalysis from './pages/DifficultyAnalysis';
-import ReportGenerator from './pages/ReportGenerator';
+import ReportGenerator from './pages/reportgenerator';
 import NLPInteraction from './pages/NLPInteraction';
 
 // 导入样式

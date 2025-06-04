@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Input, Button, Card, List, Typography, Spin, message, Divider, Select } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 
 const { TextArea } = Input;
@@ -122,7 +123,87 @@ export default function NLPInteraction() {
       // 渲染报告链接
       return (
         <div>
-          <Paragraph>{message.content}</Paragraph>
+          <div style={{ 
+            background: '#f6f8fa', 
+            border: '1px solid #e1e4e8', 
+            borderRadius: '6px', 
+            padding: '16px',
+            marginBottom: '12px'
+          }}>
+            <ReactMarkdown
+              components={{
+                h1: ({children}) => <Typography.Title level={3} style={{marginTop: 0, color: '#1890ff'}}>{children}</Typography.Title>,
+                h2: ({children}) => <Typography.Title level={4} style={{marginTop: 16, marginBottom: 8, color: '#1890ff'}}>{children}</Typography.Title>,
+                h3: ({children}) => <Typography.Title level={5} style={{marginTop: 12, marginBottom: 6, color: '#1890ff'}}>{children}</Typography.Title>,
+                p: ({children}) => <Paragraph style={{marginBottom: 8, lineHeight: '1.6'}}>{children}</Paragraph>,
+                ul: ({children}) => <ul style={{paddingLeft: '20px', marginBottom: '8px'}}>{children}</ul>,
+                ol: ({children}) => <ol style={{paddingLeft: '20px', marginBottom: '8px'}}>{children}</ol>,
+                li: ({children}) => <li style={{marginBottom: '4px', lineHeight: '1.5'}}>{children}</li>,
+                code: ({children, className}) => {
+                  const isInline = !className;
+                  return isInline ? (
+                    <code style={{
+                      background: '#f1f3f4',
+                      padding: '2px 4px',
+                      borderRadius: '3px',
+                      fontSize: '0.9em',
+                      color: '#d73a49'
+                    }}>{children}</code>
+                  ) : (
+                    <pre style={{
+                      background: '#f6f8fa',
+                      border: '1px solid #e1e4e8',
+                      borderRadius: '6px',
+                      padding: '12px',
+                      overflow: 'auto',
+                      fontSize: '0.9em',
+                      lineHeight: '1.4'
+                    }}>
+                      <code>{children}</code>
+                    </pre>
+                  );
+                },
+                blockquote: ({children}) => (
+                  <blockquote style={{
+                    borderLeft: '4px solid #dfe2e5',
+                    paddingLeft: '16px',
+                    margin: '16px 0',
+                    color: '#6a737d',
+                    fontStyle: 'italic'
+                  }}>{children}</blockquote>
+                ),
+                table: ({children}) => (
+                  <div style={{overflowX: 'auto', marginBottom: '16px'}}>
+                    <table style={{
+                      borderCollapse: 'collapse',
+                      width: '100%',
+                      border: '1px solid #e1e4e8'
+                    }}>{children}</table>
+                  </div>
+                ),
+                th: ({children}) => (
+                  <th style={{
+                    border: '1px solid #e1e4e8',
+                    padding: '8px 12px',
+                    background: '#f6f8fa',
+                    fontWeight: 'bold',
+                    textAlign: 'left'
+                  }}>{children}</th>
+                ),
+                td: ({children}) => (
+                  <td style={{
+                    border: '1px solid #e1e4e8',
+                    padding: '8px 12px'
+                  }}>{children}</td>
+                ),
+                strong: ({children}) => <strong style={{color: '#24292e', fontWeight: '600'}}>{children}</strong>,
+                em: ({children}) => <em style={{color: '#6a737d'}}>{children}</em>,
+                hr: () => <Divider style={{margin: '16px 0'}} />
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
           <Button type="primary" href={`/api/report/download/${message.data.report_path.split('/').pop()}`} target="_blank">
             下载报告
           </Button>
@@ -130,8 +211,94 @@ export default function NLPInteraction() {
       );
     }
     
-    // 普通文本消息
-    return <Paragraph>{message.content}</Paragraph>;
+    if (message.type === 'system') {
+      // 系统消息使用Markdown渲染
+      return (
+        <div style={{ 
+          background: message.error ? '#fff2f0' : '#f6f8fa', 
+          border: `1px solid ${message.error ? '#ffccc7' : '#e1e4e8'}`, 
+          borderRadius: '6px', 
+          padding: '16px'
+        }}>
+          <ReactMarkdown
+            components={{
+              h1: ({children}) => <Typography.Title level={3} style={{marginTop: 0, color: '#1890ff'}}>{children}</Typography.Title>,
+              h2: ({children}) => <Typography.Title level={4} style={{marginTop: 16, marginBottom: 8, color: '#1890ff'}}>{children}</Typography.Title>,
+              h3: ({children}) => <Typography.Title level={5} style={{marginTop: 12, marginBottom: 6, color: '#1890ff'}}>{children}</Typography.Title>,
+              p: ({children}) => <Paragraph style={{marginBottom: 8, lineHeight: '1.6'}}>{children}</Paragraph>,
+              ul: ({children}) => <ul style={{paddingLeft: '20px', marginBottom: '8px'}}>{children}</ul>,
+              ol: ({children}) => <ol style={{paddingLeft: '20px', marginBottom: '8px'}}>{children}</ol>,
+              li: ({children}) => <li style={{marginBottom: '4px', lineHeight: '1.5'}}>{children}</li>,
+              code: ({children, className}) => {
+                const isInline = !className;
+                return isInline ? (
+                  <code style={{
+                    background: '#f1f3f4',
+                    padding: '2px 4px',
+                    borderRadius: '3px',
+                    fontSize: '0.9em',
+                    color: '#d73a49'
+                  }}>{children}</code>
+                ) : (
+                  <pre style={{
+                    background: '#f6f8fa',
+                    border: '1px solid #e1e4e8',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    overflow: 'auto',
+                    fontSize: '0.9em',
+                    lineHeight: '1.4'
+                  }}>
+                    <code>{children}</code>
+                  </pre>
+                );
+              },
+              blockquote: ({children}) => (
+                <blockquote style={{
+                  borderLeft: '4px solid #dfe2e5',
+                  paddingLeft: '16px',
+                  margin: '16px 0',
+                  color: '#6a737d',
+                  fontStyle: 'italic'
+                }}>{children}</blockquote>
+              ),
+              table: ({children}) => (
+                <div style={{overflowX: 'auto', marginBottom: '16px'}}>
+                  <table style={{
+                    borderCollapse: 'collapse',
+                    width: '100%',
+                    border: '1px solid #e1e4e8'
+                  }}>{children}</table>
+                </div>
+              ),
+              th: ({children}) => (
+                <th style={{
+                  border: '1px solid #e1e4e8',
+                  padding: '8px 12px',
+                  background: '#f6f8fa',
+                  fontWeight: 'bold',
+                  textAlign: 'left'
+                }}>{children}</th>
+              ),
+              td: ({children}) => (
+                <td style={{
+                  border: '1px solid #e1e4e8',
+                  padding: '8px 12px'
+                }}>{children}</td>
+              ),
+              strong: ({children}) => <strong style={{color: '#24292e', fontWeight: '600'}}>{children}</strong>,
+              em: ({children}) => <em style={{color: '#6a737d'}}>{children}</em>,
+              hr: () => <Divider style={{margin: '16px 0'}} />
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+    
+    // 用户消息保持原样
+    return <Paragraph style={{lineHeight: '1.6'}}>{message.content}</Paragraph>;
   };
 
   return (

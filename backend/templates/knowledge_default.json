@@ -2,23 +2,46 @@
   "id": "knowledge_default",
   "name": "知识点掌握度分析报告模板",
   "type": "knowledge",
-  "created_at": "2025-05-07T10:48:08.053289",
+  "created_at": "2024-05-07T10:48:08.053289",
   "sections": [
     {
       "title": "知识点掌握概览",
       "type": "chart",
       "chart_type": "radar",
-      "data_source": "knowledge_mastery"
+      "data_source": "knowledge_mastery",
+      "description": "该图表展示了各个知识点的掌握程度，数值越高表示掌握程度越好。"
+    },
+    {
+      "title": "知识点掌握趋势",
+      "type": "chart",
+      "chart_type": "line",
+      "data_source": "knowledge_trend",
+      "description": "该图表展示了知识点掌握程度随时间的变化趋势，可以看出学习进步情况。"
     },
     {
       "title": "知识点详细分析",
       "type": "table",
-      "data_source": "knowledge_details"
+      "data_source": "knowledge_details",
+      "description": "该表格展示了各知识点的详细掌握情况，包括正确率、平均用时等指标。"
+    },
+    {
+      "title": "子知识点掌握情况",
+      "type": "chart",
+      "chart_type": "bar",
+      "data_source": "sub_knowledge_mastery",
+      "description": "该图表展示了各主要知识点下子知识点的掌握情况对比。"
     },
     {
       "title": "薄弱环节分析",
       "type": "text",
-      "data_source": "weak_points"
+      "data_source": "weak_points",
+      "description": "基于掌握程度分析，识别出需要重点关注的薄弱知识点。"
+    },
+    {
+      "title": "学习建议",
+      "type": "text",
+      "data_source": "learning_suggestions",
+      "description": "针对薄弱环节提供的个性化学习建议和改进方案。"
     }
   ]
 }
