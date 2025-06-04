@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Select, Button, Table, Spin, Alert, Typography, Divider, Tag } from 'antd';
+import { Row, Col, Card, Select, Button, Table, Spin, Alert, Typography, Divider, Tag, Radio } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
 import { Statistic } from 'antd';
@@ -16,6 +16,12 @@ const BehaviorAnalysis = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [behaviorData, setBehaviorData] = useState(null);
   const [submissionData, setSubmissionData] = useState([]);
+  
+  // 时间分布图表显示模式
+  const [timeDistributionMode, setTimeDistributionMode] = useState('hour');
+  
+  // 状态/方法分布图表显示模式
+  const [stateMethodMode, setStateMethodMode] = useState('state');
   
   // 加载学生数据
   useEffect(() => {
@@ -84,30 +90,78 @@ const BehaviorAnalysis = () => {
   
   // 生成答题时间分布图表配置
   const getHourDistributionOption = () => {
-    if (!behaviorData || !behaviorData.peak_hours) return {};
+    if (!behaviorData || !behaviorData.hour_distribution) return {};
     
-    const hours = behaviorData.peak_hours.map(item => item.hour);
-    const counts = behaviorData.peak_hours.map(item => item.count);
+    // 确保使用完整的24小时数据
+    const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
+    const counts = Array.from({length: 24}, (_, i) => {
+      const hourData = behaviorData.hour_distribution.find(item => item.hour === i);
+      return hourData ? hourData.count : 0;
+    });
+    
+    // 根据时间段设置颜色
+    const getBarColor = (hour) => {
+      if (hour >= 6 && hour < 12) return '#52c41a'; // 上午 - 绿色
+      if (hour >= 12 && hour < 18) return '#1890ff'; // 下午 - 蓝色
+      if (hour >= 18 && hour < 22) return '#fa8c16'; // 晚上 - 橙色
+      return '#722ed1'; // 深夜/凌晨 - 紫色
+    };
+    
+    const barColors = hours.map((_, index) => getBarColor(index));
     
     return {
       title: {
-        text: '答题时间分布',
+        text: '答题时间分布（24小时，北京时间）',
         left: 'center'
       },
       tooltip: {
         trigger: 'axis',
         axisPointer: {
           type: 'shadow'
+        },
+        formatter: function(params) {
+          const hour = params[0].name.split(':')[0];
+          const count = params[0].value;
+          let period = '';
+          if (hour >= 6 && hour < 12) period = '上午';
+          else if (hour >= 12 && hour < 18) period = '下午';
+          else if (hour >= 18 && hour < 22) period = '晚上';
+          else period = '深夜/凌晨';
+          return `${params[0].name}<br/>提交次数: ${count}<br/>时段: ${period}`;
         }
+      },
+      legend: {
+        data: ['上午(6-12点)', '下午(12-18点)', '晚上(18-22点)', '深夜/凌晨(22-6点)'],
+        bottom: 0,
+        icon: 'rect',
+        itemWidth: 14,
+        itemHeight: 10,
+        textStyle: { fontSize: 12 }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '15%',
+        containLabel: true
       },
       xAxis: {
         type: 'category',
         data: hours,
-        name: '小时'
+        name: '时间（北京时间）',
+        nameLocation: 'middle',
+        nameGap: 30,
+        axisLabel: {
+          rotate: 45,
+          fontSize: 10,
+          interval: 0  // 强制显示所有标签
+        }
       },
       yAxis: {
         type: 'value',
-        name: '提交次数'
+        name: '提交次数',
+        nameLocation: 'middle',
+        nameGap: 40
       },
       series: [
         {
@@ -115,7 +169,9 @@ const BehaviorAnalysis = () => {
           type: 'bar',
           data: counts,
           itemStyle: {
-            color: '#1890ff'
+            color: function(params) {
+              return barColors[params.dataIndex];
+            }
           }
         }
       ]
@@ -239,16 +295,123 @@ const BehaviorAnalysis = () => {
 
   };
   
-  // 生成周内答题分布图表配置
+  // 计算一周分布数据
+  const calculateWeekDistribution = (submissions) => {
+    const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const weekCounts = Array(7).fill(0);
+    
+    submissions.forEach(submission => {
+      let beijingDate;
+      
+      // 处理后端返回的真实数据（time字段，Unix时间戳）
+      if (submission.time) {
+        // 将Unix时间戳转换为毫秒，然后创建Date对象
+        // 由于时间戳是UTC时间，需要转换为北京时间（UTC+8）
+        const timestamp = parseFloat(submission.time) * 1000; // 转换为毫秒
+        const utcDate = new Date(timestamp);
+        
+        // 转换为北京时间（UTC+8）
+        const beijingOffset = 8 * 60 * 60 * 1000; // 8小时的毫秒数
+        beijingDate = new Date(utcDate.getTime() + beijingOffset);
+      }
+      // 处理模拟数据（submit_time字段，字符串格式）
+      else if (submission.submit_time) {
+        // submit_time格式: "2024-01-15 14:30:00"
+        beijingDate = new Date(submission.submit_time);
+      }
+      
+      if (beijingDate && !isNaN(beijingDate.getTime())) {
+        const dayOfWeek = beijingDate.getDay(); // 0 = 周日, 1 = 周一, ..., 6 = 周六
+        weekCounts[dayOfWeek]++;
+      }
+    });
+    
+    return weekDays.map((day, index) => ({
+      day: day,
+      count: weekCounts[index]
+    }));
+  };
+  
+  // 生成一周分布图表配置
+  const getWeekChartOption = () => {
+    if (!submissionData || submissionData.length === 0) return {};
+    
+    const weekData = calculateWeekDistribution(submissionData);
+    const days = weekData.map(item => item.day);
+    const counts = weekData.map(item => item.count);
+    
+    // 根据星期设置颜色
+    const getBarColor = (dayIndex) => {
+      if (dayIndex === 0 || dayIndex === 6) return '#fa8c16'; // 周末 - 橙色
+      return '#1890ff'; // 工作日 - 蓝色
+    };
+    
+    const barColors = days.map((_, index) => getBarColor(index));
+    
+    return {
+      title: {
+        text: '答题时间分布（一周）',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: function(params) {
+          const day = params[0].name;
+          const count = params[0].value;
+          const isWeekend = day === '周日' || day === '周六';
+          const dayType = isWeekend ? '周末' : '工作日';
+          return `${day}<br/>提交次数: ${count}<br/>类型: ${dayType}`;
+        }
+      },
+      legend: {
+        data: ['工作日', '周末'],
+        bottom: 0,
+        icon: 'rect',
+        itemWidth: 14,
+        itemHeight: 10,
+        textStyle: { fontSize: 12 }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: days,
+        name: '星期',
+        nameLocation: 'middle',
+        nameGap: 30
+      },
+      yAxis: {
+        type: 'value',
+        name: '提交次数',
+        nameLocation: 'middle',
+        nameGap: 40
+      },
+      series: [
+        {
+          name: '提交次数',
+          type: 'bar',
+          data: counts,
+          itemStyle: {
+            color: function(params) {
+              return barColors[params.dataIndex];
+            }
+          }
+        }
+      ]
+    };
+  };
+  
+  // 生成周内答题分布图表配置（保留原有的模拟数据功能）
   const getWeekdayDistributionOption = () => {
     if (!behaviorData) return {};
-    
-    // 模拟周内分布数据（实际应从API获取）
-    const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-    const weekdayData = weekdays.map((day, index) => ({
-      name: day,
-      value: Math.floor(Math.random() * 100) + 20 // 模拟数据
-    }));
     
     // 如果提交数据为空，生成模拟数据用于D3可视化展示
     if (submissionData.length === 0) {
@@ -279,51 +442,8 @@ const BehaviorAnalysis = () => {
       setSubmissionData(mockSubmissionData);
     }
     
-    return {
-      title: {
-        text: '周内答题分布',
-        left: 'center',
-        top: 10,
-        textStyle: {
-          fontSize: 14
-        }
-      },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: {
-          type: 'shadow'
-        }
-      },
-      grid: {
-        top: '15%',
-        left: '3%',
-        right: '4%',
-        bottom: '15%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: weekdays,
-        axisLabel: {
-          interval: 0,
-          fontSize: 12
-        }
-      },
-      yAxis: {
-        type: 'value',
-        name: '提交次数'
-      },
-      series: [
-        {
-          name: '提交次数',
-          type: 'bar',
-          data: weekdayData.map(item => item.value),
-          itemStyle: {
-            color: '#52c41a'
-          }
-        }
-      ]
-    };
+    // 使用新的一周分布图表配置
+    return getWeekChartOption();
   };
   
   // 获取学习行为特征标签
@@ -334,9 +454,9 @@ const BehaviorAnalysis = () => {
     
     // 根据正确率添加标签
     if (behaviorData.correct_rate > 0.8) {
-      tags.push({ color: 'green', text: '高正确率' });
+      tags.push({ color: 'green', text: '高掌握程度' });
     } else if (behaviorData.correct_rate < 0.5) {
-      tags.push({ color: 'red', text: '低正确率' });
+      tags.push({ color: 'red', text: '低掌握程度' });
     }
     
     // 根据答题时间添加标签
@@ -360,9 +480,9 @@ const BehaviorAnalysis = () => {
     // 如果有相对表现数据，添加相应标签
     if (behaviorData.relative_performance) {
       if (behaviorData.relative_performance.correct_rate_vs_avg > 0.1) {
-        tags.push({ color: 'green', text: '正确率高于平均' });
+        tags.push({ color: 'green', text: '掌握程度高于平均' });
       } else if (behaviorData.relative_performance.correct_rate_vs_avg < -0.1) {
-        tags.push({ color: 'red', text: '正确率低于平均' });
+        tags.push({ color: 'red', text: '掌握程度低于平均' });
       }
       
       if (behaviorData.relative_performance.time_consume_vs_avg < -0.5) {
@@ -420,7 +540,7 @@ const BehaviorAnalysis = () => {
               </Col>
               <Col xs={24} md={12}>
                 <Statistic 
-                  title="正确率" 
+                  title="掌握程度" 
                   value={behaviorData.correct_rate} 
                   precision={2} 
                   formatter={(value) => `${(value * 100).toFixed(2)}%`} 
@@ -429,7 +549,7 @@ const BehaviorAnalysis = () => {
             </Row>
             <Row gutter={16} style={{ marginTop: 16 }}>
               <Col xs={24} md={12}>
-                <Statistic title="平均答题时间" value={behaviorData.avg_time_consume.toFixed(2)} suffix="秒" />
+                <Statistic title="平均运行时间" value={behaviorData.avg_time_consume.toFixed(2)} suffix="ms" />
               </Col>
               <Col xs={24} md={12}>
                 <Statistic title="平均内存使用" value={behaviorData.avg_memory ? behaviorData.avg_memory.toFixed(2) : 'N/A'} />
@@ -453,7 +573,7 @@ const BehaviorAnalysis = () => {
                 <Row gutter={16}>
                   <Col xs={24} md={12}>
                     <Statistic 
-                      title="正确率对比" 
+                      title="掌握程度对比" 
                       value={behaviorData.relative_performance.correct_rate_vs_avg} 
                       precision={2} 
                       formatter={(value) => `${(value * 100).toFixed(2)}%`} 
@@ -463,9 +583,9 @@ const BehaviorAnalysis = () => {
                   </Col>
                   <Col xs={24} md={12}>
                     <Statistic 
-                      title="答题时间对比" 
+                      title="运行时间对比" 
                       value={behaviorData.relative_performance.time_consume_vs_avg.toFixed(2)} 
-                      suffix="秒" 
+                      suffix="ms" 
                       valueStyle={{ color: behaviorData.relative_performance.time_consume_vs_avg <= 0 ? '#3f8600' : '#cf1322' }}
                       prefix={behaviorData.relative_performance.time_consume_vs_avg <= 0 ? <ArrowDownOutlined /> : <ArrowUpOutlined />}
                     />
@@ -477,61 +597,58 @@ const BehaviorAnalysis = () => {
           
           <Row gutter={16}>
             <Col xs={24} md={12}>
-              <Card className="chart-card" title="答题时间分布" style={{ marginBottom: 16, height: '420px' }}>
-                <ReactECharts
-                  option={getHourDistributionOption()}
-                  style={{ height: '350px', width: '100%' }}
-                  className="chart-container"
-                />
-              </Card>
-            </Col>
-            <Col xs={24} md={12}>
-              <Card className="chart-card" title="答题状态分布" style={{ marginBottom: 16, height: '420px' }}>
-                <ReactECharts
-                  option={getStateDistributionOption()}
-                  style={{ height: '350px', width: '100%' }}
-                  className="chart-container"
-                />
-              </Card>
-            </Col>
-          </Row>
-          
-          <Row gutter={16} style={{ marginTop: 16 }}>
-            <Col xs={24} md={12}>
-              <Card className="chart-card" title="解题方法分布" style={{ marginBottom: 16, height: '460px' }}>
-                <ReactECharts
-                  option={getMethodDistributionOption()}
-                  style={{ height: '390px', width: '100%' }}
-                  className="chart-container"
-                />
-              </Card>
-            </Col>
-            <Col xs={24} md={12}>
-              <Card className="chart-card" title="周内答题分布" style={{ marginBottom: 16, height: '460px' }}>
-                <ReactECharts
-                  option={getWeekdayDistributionOption()}
-                  style={{ height: '390px', width: '100%' }}
-                  className="chart-container"
-                />
-              </Card>
-            </Col>
-          </Row>
-          
-          {/* D3.js答题行为时间线 */}
-          <Row gutter={16} style={{ marginTop: 16 }}>
-            <Col xs={24}>
-              <Card className="chart-card" title="答题行为时间线 (D3可视化)" style={{ marginBottom: 16 }}>
-                {submissionData && submissionData.length > 0 ? (
-                  <SubmissionTimeline data={submissionData} />
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <Spin tip="加载数据中..." />
-                    <p style={{ marginTop: '10px' }}>如果长时间未显示，请点击"分析"按钮重新获取数据</p>
+              <Card 
+                className="chart-card" 
+                title={
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>答题时间分布</span>
+                    <Radio.Group 
+                      value={timeDistributionMode} 
+                      onChange={(e) => setTimeDistributionMode(e.target.value)}
+                      size="small"
+                    >
+                      <Radio.Button value="hour">24小时</Radio.Button>
+                      <Radio.Button value="week">一周</Radio.Button>
+                    </Radio.Group>
                   </div>
-                )}
+                } 
+                style={{ marginBottom: 16, height: '420px' }}
+              >
+                <ReactECharts
+                  option={timeDistributionMode === 'hour' ? getHourDistributionOption() : getWeekdayDistributionOption()}
+                  style={{ height: '350px', width: '100%' }}
+                  className="chart-container"
+                />
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card 
+                className="chart-card" 
+                title={
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>答题分析</span>
+                    <Radio.Group 
+                      value={stateMethodMode} 
+                      onChange={(e) => setStateMethodMode(e.target.value)}
+                      size="small"
+                    >
+                      <Radio.Button value="state">状态分布</Radio.Button>
+                      <Radio.Button value="method">方法分布</Radio.Button>
+                    </Radio.Group>
+                  </div>
+                } 
+                style={{ marginBottom: 16, height: '420px' }}
+              >
+                <ReactECharts
+                  option={stateMethodMode === 'state' ? getStateDistributionOption() : getMethodDistributionOption()}
+                  style={{ height: '350px', width: '100%' }}
+                  className="chart-container"
+                />
               </Card>
             </Col>
           </Row>
+          
+
         </>
       ) : null}
     </div>

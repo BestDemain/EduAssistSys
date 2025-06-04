@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Statistic, Spin, Alert, Tooltip } from 'antd';
+import { Row, Col, Card, Statistic, Spin, Alert, Tooltip, Radio } from 'antd';
 import { UserOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
@@ -24,8 +24,12 @@ const Dashboard = () => {
   // 学习行为数据
   const [behaviorData, setBehaviorData] = useState({
     hourDistribution: [],
-    stateDistribution: []
+    stateDistribution: [],
+    weekDistribution: []
   });
+  
+  // 时间分布图表显示模式
+  const [timeDistributionMode, setTimeDistributionMode] = useState('hour');
   
   useEffect(() => {
     // 加载仪表盘数据
@@ -90,9 +94,13 @@ const Dashboard = () => {
             value: value
           }));
           
+          // 处理一周分布数据（从小时数据计算）
+          const weekData = calculateWeekDistribution(submissions);
+          
           setBehaviorData({
             hourDistribution: hourData,
-            stateDistribution: stateData
+            stateDistribution: stateData,
+            weekDistribution: weekData
           });
         }
         
@@ -106,6 +114,34 @@ const Dashboard = () => {
     
     fetchDashboardData();
   }, []);
+  
+  // 计算一周分布数据
+  const calculateWeekDistribution = (submissions) => {
+    const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const weekCounts = Array(7).fill(0);
+    
+    submissions.forEach(submission => {
+      // 后端返回的时间字段是time，格式为Unix时间戳
+      if (submission.time) {
+        // 将Unix时间戳转换为毫秒，然后创建Date对象
+        // 由于时间戳是UTC时间，需要转换为北京时间（UTC+8）
+        const timestamp = parseFloat(submission.time) * 1000; // 转换为毫秒
+        const utcDate = new Date(timestamp);
+        
+        // 转换为北京时间（UTC+8）
+        const beijingOffset = 8 * 60 * 60 * 1000; // 8小时的毫秒数
+        const beijingDate = new Date(utcDate.getTime() + beijingOffset);
+        
+        const dayOfWeek = beijingDate.getDay(); // 0 = 周日, 1 = 周一, ..., 6 = 周六
+        weekCounts[dayOfWeek]++;
+      }
+    });
+    
+    return weekDays.map((day, index) => ({
+      day: day,
+      count: weekCounts[index]
+    }));
+  };
   
   // 知识点掌握度图表配置
   const getKnowledgeChartOption = () => {
@@ -138,6 +174,80 @@ const Dashboard = () => {
           data: values,
           itemStyle: {
             color: '#1890ff'
+          }
+        }
+      ]
+    };
+  };
+  
+  // 学习行为图表配置 - 一周分布
+  const getWeekChartOption = () => {
+    const days = behaviorData.weekDistribution.map(item => item.day);
+    const counts = behaviorData.weekDistribution.map(item => item.count);
+    
+    // 根据星期设置颜色
+    const getBarColor = (dayIndex) => {
+      if (dayIndex === 0 || dayIndex === 6) return '#fa8c16'; // 周末 - 橙色
+      return '#1890ff'; // 工作日 - 蓝色
+    };
+    
+    const barColors = days.map((_, index) => getBarColor(index));
+    
+    return {
+      title: {
+        text: '答题时间分布（一周）',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: function(params) {
+          const day = params[0].name;
+          const count = params[0].value;
+          const isWeekend = day === '周日' || day === '周六';
+          const dayType = isWeekend ? '周末' : '工作日';
+          return `${day}<br/>提交次数: ${count}<br/>类型: ${dayType}`;
+        }
+      },
+      legend: {
+        data: ['工作日', '周末'],
+        bottom: 0,
+        icon: 'rect',
+        itemWidth: 14,
+        itemHeight: 10,
+        textStyle: { fontSize: 12 }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: days,
+        name: '星期',
+        nameLocation: 'middle',
+        nameGap: 30
+      },
+      yAxis: {
+        type: 'value',
+        name: '提交次数',
+        nameLocation: 'middle',
+        nameGap: 40
+      },
+      series: [
+        {
+          name: '提交次数',
+          type: 'bar',
+          data: counts,
+          itemStyle: {
+            color: function(params) {
+              return barColors[params.dataIndex];
+            }
           }
         }
       ]
@@ -345,9 +455,24 @@ const Dashboard = () => {
           </Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card className="chart-card" title="答题时间分布（北京时间）">
+          <Card 
+            className="chart-card" 
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>答题时间分布</span>
+                <Radio.Group 
+                  value={timeDistributionMode} 
+                  onChange={(e) => setTimeDistributionMode(e.target.value)}
+                  size="small"
+                >
+                  <Radio.Button value="hour">24小时</Radio.Button>
+                  <Radio.Button value="week">一周</Radio.Button>
+                </Radio.Group>
+              </div>
+            }
+          >
             <ReactECharts
-              option={getHourChartOption()}
+              option={timeDistributionMode === 'hour' ? getHourChartOption() : getWeekChartOption()}
               style={{ height: '350px', width: '100%' }}
               className="chart-container"
             />

@@ -330,9 +330,14 @@ class AnalysisService:
         state_counts = submissions.groupby('state').size().reset_index(name='count')
         state_distribution = {row['state']: row['count'] for _, row in state_counts.iterrows()}
         
-        # 计算正确答题率
-        correct_submissions = submissions[submissions['state'] == 'Absolutely_Correct']
-        correct_rate = len(correct_submissions) / len(submissions) if len(submissions) > 0 else 0
+        # 计算掌握程度（基于Mastery字段）
+        if 'Mastery' in submissions.columns:
+            # 使用Mastery字段计算平均掌握程度
+            mastery_rate = submissions['Mastery'].mean()
+        else:
+            # 如果没有Mastery字段，回退到正确率计算
+            correct_submissions = submissions[submissions['state'] == 'Absolutely_Correct']
+            mastery_rate = len(correct_submissions) / len(submissions) if len(submissions) > 0 else 0
         
         # 分析平均答题时间
         # 处理异常值，如"--"或"-"等非数值
@@ -352,7 +357,7 @@ class AnalysisService:
             'peak_hours': peak_hours.to_dict('records'),
             'hour_distribution': hour_counts.to_dict('records'),  # 完整的24小时分布
             'state_distribution': state_distribution,
-            'correct_rate': correct_rate,
+            'correct_rate': mastery_rate,  # 使用掌握程度替代正确率
             'avg_time_consume': avg_time_consume,
             'avg_memory': avg_memory,
             'method_distribution': method_distribution,
@@ -361,8 +366,11 @@ class AnalysisService:
         
         # 如果是分析单个学生，添加个性化分析
         if student_id:
-            # 获取所有学生的数据进行对比
-            all_students_correct_rate = len(all_submissions[all_submissions['state'] == 'Absolutely_Correct']) / len(all_submissions)
+            # 获取所有学生的掌握程度数据进行对比
+            if 'Mastery' in all_submissions.columns:
+                all_students_mastery_rate = all_submissions['Mastery'].mean()
+            else:
+                all_students_mastery_rate = len(all_submissions[all_submissions['state'] == 'Absolutely_Correct']) / len(all_submissions)
             
             # 处理所有学生的timeconsume数据中的异常值
             all_submissions_copy = all_submissions.copy()
@@ -372,7 +380,7 @@ class AnalysisService:
             
             # 计算相对表现
             behavior_profile['relative_performance'] = {
-                'correct_rate_vs_avg': correct_rate - all_students_correct_rate,
+                'correct_rate_vs_avg': mastery_rate - all_students_mastery_rate,
                 'time_consume_vs_avg': avg_time_consume - all_students_avg_time
             }
             
