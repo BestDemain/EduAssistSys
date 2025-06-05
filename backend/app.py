@@ -99,6 +99,18 @@ def analyze_difficulty():
     result = convert_np(result)
     return jsonify(result)
 
+# 知识点散点图数据分析
+@app.route('/api/analysis/knowledge-scatter', methods=['GET'])
+def analyze_knowledge_scatter():
+    result = analysis_service.analyze_knowledge_scatter_data()
+    return jsonify(result)
+
+# 子知识点散点图数据分析
+@app.route('/api/analysis/sub-knowledge-scatter', methods=['GET'])
+def analyze_sub_knowledge_scatter():
+    result = analysis_service.analyze_sub_knowledge_scatter_data()
+    return jsonify(result)
+
 # 生成报告
 @app.route('/api/report/generate', methods=['POST'])
 def generate_report():

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Button, Table, Spin, Alert, Typography, Divider, Tag } from 'antd';
+import { Row, Col, Card, Button, Table, Spin, Alert, Typography, Divider, Tag, Radio } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
-import { DifficultyScatterPlot } from '../components/D3Visualizations';
+import { DifficultyScatterPlot, CombinedKnowledgeScatterPlot } from '../components/D3Visualizations';
 
 const { Title, Paragraph } = Typography;
 
@@ -11,6 +11,9 @@ const DifficultyAnalysis = () => {
   const [error, setError] = useState(null);
   const [difficultyData, setDifficultyData] = useState(null);
   const [unreasonableQuestions, setUnreasonableQuestions] = useState([]);
+  const [knowledgeScatterData, setKnowledgeScatterData] = useState([]);
+  const [subKnowledgeScatterData, setSubKnowledgeScatterData] = useState([]);
+  const [scatterPlotMode, setScatterPlotMode] = useState('difficulty'); // 'difficulty' 或 'knowledge'
   
   // 分析题目难度
   const analyzeDifficulty = async () => {
@@ -18,13 +21,26 @@ const DifficultyAnalysis = () => {
       setLoading(true);
       setError(null);
       
-      const response = await axios.get('/api/analysis/difficulty');
+      // 并行获取所有数据
+      const [difficultyResponse, knowledgeResponse, subKnowledgeResponse] = await Promise.all([
+        axios.get('/api/analysis/difficulty'),
+        axios.get('/api/analysis/knowledge-scatter'),
+        axios.get('/api/analysis/sub-knowledge-scatter')
+      ]);
       
-      if (response.data.status === 'success') {
-        setDifficultyData(response.data.question_difficulty);
-        setUnreasonableQuestions(response.data.unreasonable_questions || []);
+      if (difficultyResponse.data.status === 'success') {
+        setDifficultyData(difficultyResponse.data.question_difficulty);
+        setUnreasonableQuestions(difficultyResponse.data.unreasonable_questions || []);
       } else {
-        setError(response.data.message || '分析失败');
+        setError(difficultyResponse.data.message || '分析失败');
+      }
+      
+      if (knowledgeResponse.data.status === 'success') {
+        setKnowledgeScatterData(knowledgeResponse.data.knowledge_scatter_data || []);
+      }
+      
+      if (subKnowledgeResponse.data.status === 'success') {
+        setSubKnowledgeScatterData(subKnowledgeResponse.data.sub_knowledge_scatter_data || []);
       }
       
       setLoading(false);
@@ -45,15 +61,15 @@ const DifficultyAnalysis = () => {
     if (!difficultyData) return {};
     
     const data = Object.values(difficultyData).map(item => ([
-      item.correct_rate * 100, // 正确率
-      item.avg_time_consume,   // 平均用时
-      item.title_id,           // 题目ID
-      item.knowledge           // 知识点
+      (item.avg_mastery || 0) * 100, // 平均掌握程度
+      item.correct_rate * 100,       // 正确率
+      item.title_id,                 // 题目ID
+      item.knowledge                 // 知识点
     ]));
     
     return {
       title: {
-        text: '题目难度分布',
+        text: '题目掌握程度与正确率关系',
         left: 'center'
       },
       tooltip: {
@@ -61,19 +77,21 @@ const DifficultyAnalysis = () => {
         formatter: function(params) {
           return `题目ID: ${params.value[2]}<br/>` +
                  `知识点: ${params.value[3]}<br/>` +
-                 `正确率: ${params.value[0].toFixed(2)}%<br/>` +
-                 `平均用时: ${params.value[1].toFixed(2)}秒`;
+                 `平均掌握程度: ${params.value[0].toFixed(2)}%<br/>` +
+                 `正确率: ${params.value[1].toFixed(2)}%`;
         }
       },
       xAxis: {
         type: 'value',
-        name: '正确率(%)',
+        name: '平均掌握程度(%)',
         min: 0,
         max: 100
       },
       yAxis: {
         type: 'value',
-        name: '平均用时(秒)'
+        name: '正确率(%)',
+        min: 0,
+        max: 100
       },
       series: [
         {
@@ -83,11 +101,15 @@ const DifficultyAnalysis = () => {
           data: data,
           itemStyle: {
             color: function(params) {
-              // 根据正确率设置颜色
-              const correctRate = params.value[0];
-              if (correctRate < 30) return '#ff4d4f'; // 红色：难题
-              if (correctRate < 60) return '#faad14'; // 黄色：中等难度
-              return '#52c41a'; // 绿色：简单题
+              // 根据掌握程度与正确率的差异设置颜色
+              const mastery = params.value[0];
+              const correctRate = params.value[1];
+              const diff = mastery - correctRate;
+              
+              if (diff > 20) return '#ff4d4f'; // 红色：掌握程度高但正确率低，题目可能过难
+              if (diff > 10) return '#faad14'; // 黄色：掌握程度略高于正确率
+              if (diff < -20) return '#722ed1'; // 紫色：正确率高但掌握程度低，题目可能过简单
+              return '#52c41a'; // 绿色：掌握程度与正确率匹配良好
             }
           }
         }
@@ -142,7 +164,7 @@ const DifficultyAnalysis = () => {
         }
       },
       legend: {
-        data: ['平均正确率(%)', '平均用时(秒)'],
+        data: ['平均正确率(%)', '平均用时(毫秒)'],
         top: 'bottom'
       },
       xAxis: {
@@ -162,7 +184,7 @@ const DifficultyAnalysis = () => {
         },
         {
           type: 'value',
-          name: '平均用时(秒)',
+          name: '平均用时(毫秒)',
           min: 0
         }
       ],
@@ -176,7 +198,7 @@ const DifficultyAnalysis = () => {
           }
         },
         {
-          name: '平均用时(秒)',
+          name: '平均用时(毫秒)',
           type: 'line',
           yAxisIndex: 1,
           data: knowledgeData.map(item => item.avgTimeConsume.toFixed(2)),
@@ -259,7 +281,7 @@ const DifficultyAnalysis = () => {
       sorter: (a, b) => a.correct_rate - b.correct_rate,
     },
     {
-      title: '平均用时(秒)',
+      title: '平均用时(毫秒)',
       dataIndex: 'avg_time_consume',
       key: 'avg_time_consume',
       render: (text) => text.toFixed(2),
@@ -277,10 +299,10 @@ const DifficultyAnalysis = () => {
         let color = 'green';
         let text = '简单';
         
-        if (record.correct_rate < 0.3) {
+        if (record.correct_rate < 0.2) {
           color = 'red';
           text = '困难';
-        } else if (record.correct_rate < 0.6) {
+        } else if (record.correct_rate < 0.3) {
           color = 'orange';
           text = '中等';
         }
@@ -323,33 +345,42 @@ const DifficultyAnalysis = () => {
         <Spin tip="分析中..." size="large" style={{ display: 'flex', justifyContent: 'center', marginTop: '100px' }} />
       ) : difficultyData ? (
         <>
-          <Row gutter={[16, 16]}>
-            <Col span={12}>
-              <Card title="题目难度散点图">
-                <ReactECharts option={getDifficultyScatterOption()} style={{ height: 400, width: '100%' }} />
-              </Card>
-            </Col>
-            <Col span={12}>
-              <Card title="知识点难度分布">
-                <ReactECharts option={getKnowledgeDifficultyOption()} style={{ height: 400, width: '100%' }} />
-              </Card>
-            </Col>
-          </Row>
-          
-          {/* D3.js题目难度散点图 */}
-          <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+          {/* 掌握程度与正确率关系图 */}
+          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
             <Col span={24}>
-              <Card title="题目难度与正确率关系图">
-                <DifficultyScatterPlot 
-                  data={Object.values(difficultyData).map(item => ({
-                    title_id: item.title_id,
-                    knowledge: item.knowledge,
-                    correct_rate: item.correct_rate,
-                    avg_time_consume: item.avg_time_consume,
-                    submit_count: item.submit_count || 25 // 如果没有提交次数，使用固定默认值
-                  }))} 
-                  title="题目难度与正确率关系图"
-                />
+              <Card 
+                title={
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>掌握程度与正确率关系图</span>
+                    <Radio.Group 
+                      value={scatterPlotMode} 
+                      onChange={(e) => setScatterPlotMode(e.target.value)}
+                      size="small"
+                    >
+                      <Radio.Button value="difficulty">题目难度</Radio.Button>
+                      <Radio.Button value="knowledge">知识点</Radio.Button>
+                    </Radio.Group>
+                  </div>
+                }
+              >
+                {scatterPlotMode === 'difficulty' ? (
+                  <DifficultyScatterPlot 
+                    data={Object.values(difficultyData).map(item => ({
+                      title_id: item.title_id,
+                      knowledge: item.knowledge,
+                      correct_rate: item.correct_rate,
+                      avg_mastery: item.avg_mastery || 0,
+                      submit_count: item.total_submissions || 25 // 使用总提交次数
+                    }))} 
+                    title="题目掌握程度与正确率关系图"
+                  />
+                ) : (
+                  <CombinedKnowledgeScatterPlot 
+                    knowledgeData={knowledgeScatterData}
+                    subKnowledgeData={subKnowledgeScatterData}
+                    title="知识点掌握程度与正确率关系图"
+                  />
+                )}
               </Card>
             </Col>
           </Row>

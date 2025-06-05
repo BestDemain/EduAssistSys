@@ -166,6 +166,128 @@ class AnalysisService:
             'weak_points': weak_points
         }
     
+    def analyze_knowledge_scatter_data(self):
+        """分析知识点掌握程度与正确率关系数据，用于散点图展示
+        
+        Returns:
+            知识点散点图数据
+        """
+        try:
+            # 获取所有提交记录
+            all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+            if all_submissions.empty:
+                return {'status': 'error', 'message': '没有找到提交记录数据'}
+            
+            # 获取题目信息
+            questions = pd.DataFrame(self.data_service.get_questions())
+            if questions.empty:
+                return {'status': 'error', 'message': '没有找到题目数据'}
+            
+            # 合并提交记录和题目信息
+            merged_data = pd.merge(all_submissions, questions, on='title_ID', how='left')
+            
+            # 处理缺失值
+            merged_data.fillna({'knowledge': '未知'}, inplace=True)
+            
+            knowledge_scatter_data = []
+            
+            # 按知识点分组分析
+            for knowledge, group in merged_data.groupby('knowledge'):
+                # 计算平均掌握程度
+                if 'Mastery' in group.columns:
+                    mastery_values = pd.to_numeric(group['Mastery'], errors='coerce')
+                    avg_mastery = mastery_values.mean() if not mastery_values.isna().all() else 0
+                else:
+                    avg_mastery = 0
+                
+                # 计算正确率
+                total_submissions = len(group)
+                correct_submissions = len(group[group['state'] == 'Absolutely_Correct'])
+                correct_rate = correct_submissions / total_submissions if total_submissions > 0 else 0
+                
+                # 计算该知识点的题目数量
+                question_count = len(group['title_ID'].unique())
+                
+                knowledge_scatter_data.append({
+                    'knowledge': knowledge,
+                    'avg_mastery': float(avg_mastery),
+                    'correct_rate': float(correct_rate),
+                    'question_count': int(question_count),
+                    'total_submissions': int(total_submissions)
+                })
+            
+            return {
+                'status': 'success',
+                'knowledge_scatter_data': knowledge_scatter_data
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'分析知识点散点图数据时出错: {str(e)}'
+            }
+    
+    def analyze_sub_knowledge_scatter_data(self):
+        """分析子知识点掌握程度与正确率关系数据，用于散点图展示
+        
+        Returns:
+            子知识点散点图数据
+        """
+        try:
+            # 获取所有提交记录
+            all_submissions = pd.DataFrame(self.data_service.get_all_submissions())
+            if all_submissions.empty:
+                return {'status': 'error', 'message': '没有找到提交记录数据'}
+            
+            # 获取题目信息
+            questions = pd.DataFrame(self.data_service.get_questions())
+            if questions.empty:
+                return {'status': 'error', 'message': '没有找到题目数据'}
+            
+            # 合并提交记录和题目信息
+            merged_data = pd.merge(all_submissions, questions, on='title_ID', how='left')
+            
+            # 处理缺失值
+            merged_data.fillna({'sub_knowledge': '未知'}, inplace=True)
+            
+            sub_knowledge_scatter_data = []
+            
+            # 按子知识点分组分析
+            for sub_knowledge, group in merged_data.groupby('sub_knowledge'):
+                # 计算平均掌握程度
+                if 'Mastery' in group.columns:
+                    mastery_values = pd.to_numeric(group['Mastery'], errors='coerce')
+                    avg_mastery = mastery_values.mean() if not mastery_values.isna().all() else 0
+                else:
+                    avg_mastery = 0
+                
+                # 计算正确率
+                total_submissions = len(group)
+                correct_submissions = len(group[group['state'] == 'Absolutely_Correct'])
+                correct_rate = correct_submissions / total_submissions if total_submissions > 0 else 0
+                
+                # 计算该子知识点的题目数量
+                question_count = len(group['title_ID'].unique())
+                
+                sub_knowledge_scatter_data.append({
+                    'sub_knowledge': sub_knowledge,
+                    'avg_mastery': float(avg_mastery),
+                    'correct_rate': float(correct_rate),
+                    'question_count': int(question_count),
+                    'total_submissions': int(total_submissions)
+                })
+            
+            return {
+                'status': 'success',
+                'sub_knowledge_scatter_data': sub_knowledge_scatter_data
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'分析子知识点散点图数据时出错: {str(e)}'
+            }
+
     def analyze_knowledge_mastery_timeseries(self, student_id=None):
         """分析知识点掌握程度的时序变化
         
@@ -442,6 +564,11 @@ class AnalysisService:
                 knowledge = '未知'
                 sub_knowledge = '未知'
             
+            # 计算该题目的平均掌握程度
+            # 获取所有做过这道题的学生的掌握程度
+            title_mastery_levels = group['Mastery'].tolist()
+            avg_mastery = np.mean(title_mastery_levels) if title_mastery_levels else 0
+            
             # 存储题目难度信息
             question_difficulty[title_id] = {
                 'title_id': title_id,
@@ -452,7 +579,8 @@ class AnalysisService:
                 'correct_submissions': correct_submissions,
                 'score': score,
                 'knowledge': knowledge,
-                'sub_knowledge': sub_knowledge
+                'sub_knowledge': sub_knowledge,
+                'avg_mastery': avg_mastery
             }
         
         # 分析学生的知识掌握程度
@@ -487,7 +615,7 @@ class AnalysisService:
                 avg_mastery = np.mean(knowledge_mastery_levels) if knowledge_mastery_levels else 0
                 
                 # 如果学生知识掌握程度高但题目正确率低，则认为题目难度不合理
-                if avg_mastery > 0.37 and difficulty['correct_rate'] < 0.3:
+                if avg_mastery > 0.37 and difficulty['correct_rate'] < 0.22:
                     unreasonable_questions.append({
                         'title_id': title_id,
                         'correct_rate': difficulty['correct_rate'],

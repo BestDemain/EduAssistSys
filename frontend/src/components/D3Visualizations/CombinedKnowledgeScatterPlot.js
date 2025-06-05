@@ -5,25 +5,26 @@ import { Card, Typography } from 'antd';
 const { Title } = Typography;
 
 /**
- * 题目难度散点图组件
- * 使用D3.js实现的散点图，展示题目难度与正确率的关系
+ * 知识点和子知识点掌握程度与正确率关系图组件
+ * 使用D3.js实现的散点图，在同一张图上展示知识点和子知识点的掌握程度与正确率关系
  * @param {Object} props
- * @param {Array} props.data 题目数据数组
+ * @param {Array} props.knowledgeData 知识点数据数组
+ * @param {Array} props.subKnowledgeData 子知识点数据数组
  * @param {string} props.title 图表标题
  */
-const DifficultyScatterPlot = ({ data, title = '题目难度与正确率关系图' }) => {
+const CombinedKnowledgeScatterPlot = ({ knowledgeData = [], subKnowledgeData = [], title = '知识点掌握程度与正确率关系图' }) => {
   const svgRef = useRef(null);
 
   useEffect(() => {
-    if (!data || data.length === 0) return;
+    if ((!knowledgeData || knowledgeData.length === 0) && (!subKnowledgeData || subKnowledgeData.length === 0)) return;
 
     // 清除之前的图表
     d3.select(svgRef.current).selectAll('*').remove();
 
     // 设置画布尺寸
-    const width = 700;
-    const height = 400;
-    const margin = { top: 40, right: 40, bottom: 60, left: 60 };
+    const width = 800;
+    const height = 500;
+    const margin = { top: 40, right: 40, bottom: 80, left: 60 };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
@@ -75,12 +76,24 @@ const DifficultyScatterPlot = ({ data, title = '题目难度与正确率关系�
         
         // 更新散点位置
         g.selectAll('.dot')
-          .attr('cx', d => newXScale(d.avg_mastery || 0))
-          .attr('cy', d => newYScale(d.correct_rate));
+          .attr('cx', d => d.type === 'knowledge' ? newXScale(d.avg_mastery || 0) : null)
+          .attr('cy', d => d.type === 'knowledge' ? newYScale(d.correct_rate) : null);
+        
+        // 更新三角形位置
+        g.selectAll('.triangle')
+          .attr('transform', d => d.type === 'sub_knowledge' ? `translate(${newXScale(d.avg_mastery || 0)}, ${newYScale(d.correct_rate)})` : null);
       });
 
     // 应用缩放行为到SVG
     svg.call(zoom);
+
+    // 合并数据并添加类型标识
+    const combinedData = [
+      ...knowledgeData.map(d => ({ ...d, type: 'knowledge', name: d.knowledge })),
+      ...subKnowledgeData.map(d => ({ ...d, type: 'sub_knowledge', name: d.sub_knowledge }))
+    ];
+
+    if (combinedData.length === 0) return;
 
     // 创建X轴比例尺（掌握程度）
     const xScale = d3.scaleLinear()
@@ -92,14 +105,9 @@ const DifficultyScatterPlot = ({ data, title = '题目难度与正确率关系�
       .domain([0, 1])
       .range([innerHeight, 0]);
 
-    // 创建颜色比例尺
-    const colorScale = d3.scaleLinear()
-      .domain([0, 0.5, 1])
-      .range(['#ff4d4f', '#faad14', '#52c41a']);
-
     // 创建大小比例尺
     const sizeScale = d3.scaleLinear()
-      .domain([d3.min(data, d => d.submit_count), d3.max(data, d => d.submit_count)])
+      .domain([d3.min(combinedData, d => d.question_count), d3.max(combinedData, d => d.question_count)])
       .range([5, 15]);
 
     // 绘制X轴
@@ -155,72 +163,120 @@ const DifficultyScatterPlot = ({ data, title = '题目难度与正确率关系�
       .style('stroke', '#e0e0e0')
       .style('stroke-opacity', 0.7);
 
+    // 创建tooltip
+    const tooltip = d3.select('body')
+      .append('div')
+      .attr('class', 'tooltip')
+      .style('position', 'absolute')
+      .style('background', 'rgba(0, 0, 0, 0.8)')
+      .style('color', 'white')
+      .style('padding', '8px')
+      .style('border-radius', '4px')
+      .style('font-size', '12px')
+      .style('pointer-events', 'none')
+      .style('opacity', 0);
+
     // 绘制散点
     g.selectAll('.dot')
-      .data(data)
-      .enter()
-      .append('circle')
+      .data(combinedData.filter(d => d.type === 'knowledge'))
+      .enter().append('circle')
       .attr('class', 'dot')
       .attr('cx', d => xScale(d.avg_mastery || 0))
       .attr('cy', d => yScale(d.correct_rate))
-      .attr('r', d => sizeScale(d.submit_count))
+      .attr('r', d => Math.sqrt(sizeScale(d.question_count)))
       .style('fill', d => {
-        // 根据掌握程度与正确率的差异设置颜色
-        const mastery = (d.avg_mastery || 0) * 100;
-        const correctRate = d.correct_rate * 100;
-        const diff = mastery - correctRate;
-        
-        if (diff > 20) return '#ff4d4f'; // 红色：掌握程度高但正确率低
-        if (diff > 10) return '#faad14'; // 黄色：掌握程度略高于正确率
-        if (diff < -20) return '#722ed1'; // 紫色：正确率高但掌握程度低
-        return '#52c41a'; // 绿色：掌握程度与正确率匹配良好
+        const diff = d.avg_mastery - d.correct_rate;
+        if (diff > 0.15) return '#ff4d4f'; // 掌握度高但正确率低
+        if (diff > 0.12) return '#faad14'; // 掌握度略高于正确率
+        if (diff < -0.1) return '#722ed1'; // 正确率高但掌握度低
+        return '#52c41a'; // 掌握度与正确率匹配
       })
       .style('opacity', 0.7)
       .style('stroke', '#fff')
       .style('stroke-width', 1)
       .on('mouseover', function(event, d) {
         d3.select(this)
-          .transition()
-          .duration(200)
-          .attr('r', d => sizeScale(d.submit_count) + 3)
-          .style('opacity', 1);
-
-        // 显示提示框
+          .style('opacity', 1)
+          .style('stroke-width', 2);
+        
         tooltip.transition()
           .duration(200)
           .style('opacity', .9);
-        tooltip.html(`题目ID: ${d.title_id}<br/>知识点: ${d.knowledge}<br/>平均掌握程度: ${((d.avg_mastery || 0) * 100).toFixed(1)}%<br/>正确率: ${(d.correct_rate * 100).toFixed(1)}%<br/>提交次数: ${d.submit_count}`)
+        
+        const typeLabel = d.type === 'knowledge' ? '知识点' : '子知识点';
+        tooltip.html(`
+          <strong>${typeLabel}:</strong> ${d.name}<br/>
+          <strong>平均掌握程度:</strong> ${(d.avg_mastery * 100).toFixed(1)}%<br/>
+          <strong>正确率:</strong> ${(d.correct_rate * 100).toFixed(1)}%<br/>
+          <strong>题目数量:</strong> ${d.question_count}
+        `)
           .style('left', (event.pageX + 10) + 'px')
           .style('top', (event.pageY - 28) + 'px');
       })
       .on('mouseout', function(d) {
         d3.select(this)
-          .transition()
-          .duration(500)
-          .attr('r', d => sizeScale(d.submit_count))
-          .style('opacity', 0.7);
-
-        // 隐藏提示框
+          .style('opacity', 0.7)
+          .style('stroke-width', 1);
+        
         tooltip.transition()
           .duration(500)
           .style('opacity', 0);
       });
 
-    // 添加标题
-    svg.append('text')
-      .attr('x', innerWidth / 2)
-      .attr('y', -margin.top / 2)
-      .attr('text-anchor', 'middle')
-      .style('font-size', '16px')
-      .style('font-weight', 'bold')
-      .text(title);
+    // 绘制三角形（子知识点）
+    g.selectAll('.triangle')
+      .data(combinedData.filter(d => d.type === 'sub_knowledge'))
+      .enter().append('path')
+      .attr('class', 'triangle')
+      .attr('transform', d => `translate(${xScale(d.avg_mastery || 0)}, ${yScale(d.correct_rate)})`)
+      .attr('d', d => {
+        const size = sizeScale(d.question_count);
+        return d3.symbol().type(d3.symbolTriangle).size(size * size * 3.14)();
+      })
+      .style('fill', d => {
+        const diff = d.avg_mastery - d.correct_rate;
+        if (diff > 0.15) return '#ff4d4f'; // 掌握度高但正确率低
+        if (diff > 0.12) return '#faad14'; // 掌握度略高于正确率
+        if (diff < -0.1) return '#722ed1'; // 正确率高但掌握度低
+        return '#52c41a'; // 掌握度与正确率匹配
+      })
+      .style('opacity', 0.7)
+      .style('stroke', '#fff')
+      .style('stroke-width', 1)
+      .on('mouseover', function(event, d) {
+        d3.select(this)
+          .style('opacity', 1)
+          .style('stroke-width', 2);
+        
+        tooltip.transition()
+          .duration(200)
+          .style('opacity', .9);
+        
+        const typeLabel = d.type === 'knowledge' ? '知识点' : '子知识点';
+        tooltip.html(`
+          <strong>${typeLabel}:</strong> ${d.name}<br/>
+          <strong>平均掌握程度:</strong> ${(d.avg_mastery * 100).toFixed(1)}%<br/>
+          <strong>正确率:</strong> ${(d.correct_rate * 100).toFixed(1)}%<br/>
+          <strong>题目数量:</strong> ${d.question_count}
+        `)
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY - 28) + 'px');
+      })
+      .on('mouseout', function(d) {
+        d3.select(this)
+          .style('opacity', 0.7)
+          .style('stroke-width', 1);
+        
+        tooltip.transition()
+          .duration(500)
+          .style('opacity', 0);
+      });
 
-    // 添加图例 - 颜色
+    // 添加颜色图例
     const colorLegend = g.append('g')
       .attr('class', 'color-legend')
       .attr('transform', `translate(${innerWidth - 200}, 20)`);
 
-    // 添加颜色图例标题
     colorLegend.append('text')
       .attr('x', 0)
       .attr('y', -10)
@@ -255,18 +311,54 @@ const DifficultyScatterPlot = ({ data, title = '题目难度与正确率关系�
           .text(d.label);
       });
 
+    // 添加形状图例
+    const shapeLegend = g.append('g')
+      .attr('class', 'shape-legend')
+      .attr('transform', `translate(20, 20)`);
+
+    shapeLegend.append('text')
+      .attr('x', 0)
+      .attr('y', -10)
+      .style('font-size', '12px')
+      .style('font-weight', 'bold')
+      .text('类型');
+
+    const shapeLegendData = [
+      { shape: d3.symbolCircle, label: '知识点' },
+      { shape: d3.symbolTriangle, label: '子知识点' }
+    ];
+
+    shapeLegend.selectAll('.shape-legend-item')
+      .data(shapeLegendData)
+      .enter().append('g')
+      .attr('class', 'shape-legend-item')
+      .attr('transform', (d, i) => `translate(0, ${i * 25})`)
+      .each(function(d) {
+        const g = d3.select(this);
+        g.append('path')
+          .attr('transform', 'translate(15, 0)')
+          .attr('d', d3.symbol().type(d.shape).size(100))
+          .style('fill', '#1890ff')
+          .style('opacity', 0.7);
+        g.append('text')
+          .attr('x', 30)
+          .attr('y', 0)
+          .attr('dy', '0.35em')
+          .style('font-size', '12px')
+          .text(d.label);
+      });
+
     // 添加大小图例
     const sizeLegend = g.append('g')
       .attr('class', 'size-legend')
       .attr('transform', `translate(20, 100)`);
 
-    // 添加大小图例标题
     sizeLegend.append('text')
       .attr('x', 0)
-      .attr('y', -90)
+      .attr('y', -10)
       .style('font-size', '12px')
       .style('font-weight', 'bold')
-      .text('提交次数');
+      .text('题目数量');
 
     const sizeLegendData = [
       { size: 5, label: '少' },
@@ -282,46 +374,30 @@ const DifficultyScatterPlot = ({ data, title = '题目难度与正确率关系�
       .each(function(d) {
         const g = d3.select(this);
         g.append('circle')
-          .attr('cx', 0)
-          .attr('cy', -60)
+          .attr('cx', 15)
+          .attr('cy', 0)
           .attr('r', d.size)
           .style('fill', '#1890ff')
           .style('opacity', 0.7);
         g.append('text')
-          .attr('x', 0)
-          .attr('y', -80)
-          .attr('text-anchor', 'middle')
+          .attr('x', 15)
+          .attr('y', 25)
+          .style('text-anchor', 'middle')
           .style('font-size', '10px')
           .text(d.label);
       });
 
-    // 创建提示框
-    const tooltip = d3.select('body').append('div')
-      .attr('class', 'd3-tooltip')
-      .style('opacity', 0)
-      .style('position', 'absolute')
-      .style('text-align', 'center')
-      .style('padding', '8px')
-      .style('font-size', '12px')
-      .style('background', 'rgba(0, 0, 0, 0.75)')
-      .style('color', '#fff')
-      .style('border-radius', '4px')
-      .style('pointer-events', 'none');
-
     // 清理函数
     return () => {
-      d3.select('body').selectAll('.d3-tooltip').remove();
+      d3.select('body').selectAll('.tooltip').remove();
     };
-  }, [data, title]);
+  }, [knowledgeData, subKnowledgeData]);
 
   return (
-    <Card style={{ marginTop: 16 }}>
-      <Title level={4}>{title}</Title>
-      <div style={{ display: 'flex', justifyContent: 'center', overflowX: 'auto' }}>
-        <svg ref={svgRef}></svg>
-      </div>
-    </Card>
+    <div style={{ width: '100%', textAlign: 'center' }}>
+      <svg ref={svgRef}></svg>
+    </div>
   );
 };
 
-export default DifficultyScatterPlot;
+export default CombinedKnowledgeScatterPlot;
