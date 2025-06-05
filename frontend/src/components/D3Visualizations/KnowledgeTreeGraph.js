@@ -102,7 +102,7 @@ const KnowledgeTreeGraph = ({ data, width = 1200, height = 800 }) => {
     // 定义颜色比例尺 - 根据节点类型设置颜色
     const nodeColorScale = d3.scaleOrdinal()
       .domain(['knowledge', 'sub_knowledge'])
-      .range(['#4682b4', '#f7bb81']);
+      .range(['#1890ff', '#fa8c16']);
 
     // 定义透明度比例尺 - 根据掌握程度设置透明度
     const opacityScale = d3.scaleLinear()

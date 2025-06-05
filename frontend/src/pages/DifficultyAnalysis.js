@@ -346,7 +346,7 @@ const DifficultyAnalysis = () => {
                     knowledge: item.knowledge,
                     correct_rate: item.correct_rate,
                     avg_time_consume: item.avg_time_consume,
-                    submit_count: item.submit_count || Math.floor(Math.random() * 50) + 10 // 如果没有提交次数，生成随机数据
+                    submit_count: item.submit_count || 25 // 如果没有提交次数，使用固定默认值
                   }))} 
                   title="题目难度与正确率关系图"
                 />

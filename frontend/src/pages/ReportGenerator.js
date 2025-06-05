@@ -15,7 +15,8 @@ import {
   Statistic,
   Tag,
   Radio,
-  Divider
+  Divider,
+  List
 } from 'antd';
 import { 
   UserOutlined, 
@@ -26,14 +27,19 @@ import {
   ThunderboltOutlined,
   TeamOutlined,
   SaveOutlined,
-  PictureOutlined
+  PictureOutlined,
+  SendOutlined,
+  RobotOutlined,
+  MessageOutlined
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
+import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 
 const { Option } = Select;
 const { Title, Paragraph } = Typography;
 const { TabPane } = Tabs;
+const { TextArea } = Input;
 
 const ReportGenerator = () => {
   const [apiKey, setApiKey] = useState('');
@@ -47,6 +53,14 @@ const ReportGenerator = () => {
   const [error, setError] = useState(null);
   const [savingCharts, setSavingCharts] = useState(false);
   const [savedCharts, setSavedCharts] = useState([]);
+  
+  // NLP交互相关状态
+  const [nlpQuery, setNlpQuery] = useState('');
+  const [nlpMessages, setNlpMessages] = useState([]);
+  const [nlpLoading, setNlpLoading] = useState(false);
+  const [modelType, setModelType] = useState('backend');
+  const [showNlpModule, setShowNlpModule] = useState(false);
+  const messagesEndRef = useRef(null);
   
   // 图表引用
   const knowledgeRadarRef = useRef(null);
@@ -67,6 +81,36 @@ const ReportGenerator = () => {
   useEffect(() => {
     fetchStudents();
   }, []);
+
+  // 自动滚动到最新消息
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [nlpMessages]);
+
+  // 初始化NLP欢迎消息
+  const initializeNlpMessages = () => {
+    setNlpMessages([
+      {
+        type: 'system',
+        content: `欢迎使用智能分析助手！当前已选择学生ID: ${selectedStudent}。您可以询问关于该学生的学习情况，例如：\n\n• "分析这个学生的知识点掌握情况"\n• "查看学习行为模式"\n• "生成学习建议"\n\n我将基于当前学生的数据为您提供详细分析。`
+      }
+    ]);
+  };
+
+  // 当选择学生时，显示NLP模块并初始化消息
+  useEffect(() => {
+    if (selectedStudent) {
+      setShowNlpModule(true);
+      initializeNlpMessages();
+    } else {
+      setShowNlpModule(false);
+      setNlpMessages([]);
+    }
+  }, [selectedStudent]);
 
   const fetchStudents = async () => {
     try {
@@ -331,6 +375,138 @@ const ReportGenerator = () => {
     }
   };
 
+  // 处理NLP查询提交
+  const handleNlpSubmit = async () => {
+    if (!nlpQuery.trim()) return;
+    if (!selectedStudent) {
+      message.warning('请先选择学生');
+      return;
+    }
+
+    // 添加用户消息
+    const userMessage = { type: 'user', content: nlpQuery };
+    setNlpMessages(prev => [...prev, userMessage]);
+    
+    // 清空输入框
+    setNlpQuery('');
+    
+    // 设置加载状态
+    setNlpLoading(true);
+    
+    try {
+      let response;
+      
+      if (modelType === 'backend') {
+        // 使用后端NLP服务，传入当前选择的学生ID
+        response = await axios.post('/api/nlp/query', { 
+          query: nlpQuery,
+          student_id: selectedStudent,
+          context: 'report_generation'
+        });
+        
+        // 添加系统回复
+        const systemMessage = { 
+          type: 'system', 
+          content: response.data.content || '抱歉，我无法理解您的问题。',
+          data: response.data
+        };
+        
+        setNlpMessages(prev => [...prev, systemMessage]);
+      } else {
+        // 使用本地Deepseek模型
+        const contextPrompt = `当前分析的学生ID是: ${selectedStudent}。${studentData ? '已获取到学生数据。' : '尚未获取学生数据。'}\n\n用户问题: ${nlpQuery}`;
+        const deepseekResponse = await callDeepseekModel(contextPrompt);
+        
+        // 添加系统回复
+        const systemMessage = { 
+          type: 'system', 
+          content: deepseekResponse,
+          model: 'deepseek'
+        };
+        
+        setNlpMessages(prev => [...prev, systemMessage]);
+      }
+    } catch (error) {
+      console.error('NLP查询处理失败:', error);
+      message.error('查询处理失败，请稍后重试');
+      
+      // 添加错误消息
+      const errorMessage = { 
+        type: 'system', 
+        content: '抱歉，处理您的请求时出现了错误。请稍后重试。',
+        error: true
+      };
+      
+      setNlpMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setNlpLoading(false);
+    }
+  };
+
+  // 调用本地Deepseek模型
+  const callDeepseekModel = async (prompt) => {
+    try {
+      const url = "http://localhost:11434/api/generate";
+      
+      const data = {
+        model: "deepseek-r1:8b",
+        prompt: prompt,
+        stream: false,
+      };
+      
+      const response = await axios.post(url, data);
+      
+      if (response.status === 200) {
+        return response.data.response;
+      } else {
+        throw new Error(`请求失败，状态码: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Deepseek模型调用失败:', error);
+      throw error;
+    }
+  };
+
+  // 渲染NLP消息内容
+  const renderNlpMessageContent = (message) => {
+    if (message.type === 'system' && message.data && message.data.type === 'report') {
+      // 渲染报告链接
+      return (
+        <div>
+          <div style={{ 
+            background: '#f6f8fa', 
+            border: '1px solid #e1e4e8', 
+            borderRadius: '6px', 
+            padding: '16px',
+            marginBottom: '12px'
+          }}>
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          </div>
+          <Button type="primary" href={`/api/report/download/${message.data.report_path.split('/').pop()}`} target="_blank">
+            下载报告
+          </Button>
+        </div>
+      );
+    }
+    
+    if (message.type === 'system') {
+      // 系统消息使用Markdown渲染
+      return (
+        <div style={{ 
+          background: message.error ? '#fff2f0' : '#f6f8fa', 
+          border: `1px solid ${message.error ? '#ffccc7' : '#e1e4e8'}`, 
+          borderRadius: '6px', 
+          padding: '16px'
+        }}>
+          <ReactMarkdown>{message.content}</ReactMarkdown>
+        </div>
+      );
+    }
+    
+    // 用户消息保持原样
+    return <Paragraph style={{lineHeight: '1.6'}}>{message.content}</Paragraph>;
+  };
+
   // 生成多模态AI报告
   const generateMultimodalReport = async () => {
     if (!selectedStudent) {
@@ -360,13 +536,18 @@ const ReportGenerator = () => {
         saved_charts: savedCharts,
         knowledge_data: studentData?.knowledge,
         behavior_data: studentData?.behavior,
-        difficulty_data: studentData?.difficulty
+        difficulty_data: studentData?.difficulty,
+        nlp_context: nlpMessages.filter(msg => msg.type !== 'system') // 传递NLP交互上下文，过滤掉系统消息
       });
 
       if (response.data.status === 'success') {
         setGeneratedReport(response.data.report);
         setReportWithCharts(response.data.report_content || response.data.report);
-        message.success('多模态报告生成成功！基于图表深度分析的报告已生成。');
+        const hasNlpContext = nlpMessages.filter(msg => msg.type !== 'system').length > 0;
+        const successMessage = hasNlpContext 
+          ? '多模态报告生成成功！已整合图表分析和智能助手对话洞察的综合报告已生成。'
+          : '多模态报告生成成功！基于图表深度分析的报告已生成。';
+        message.success(successMessage);
       } else {
         message.error(response.data.message || '多模态报告生成失败');
       }
@@ -678,17 +859,29 @@ const ReportGenerator = () => {
     } else if (studentData?.submissions && studentData.submissions.length > 0) {
       submissions = studentData.submissions;
     } else {
-      // 生成模拟数据用于展示
-      const mockSubmissions = [];
-      const now = new Date();
-      for (let i = 0; i < 20; i++) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - Math.floor(Math.random() * 7));
-        date.setHours(Math.floor(Math.random() * 24));
-        mockSubmissions.push({
-          submit_time: date.toISOString().slice(0, 19).replace('T', ' ')
-        });
-      }
+      // 使用固定的模拟数据用于展示，避免每次渲染都变化
+      const mockSubmissions = [
+        { submit_time: '2024-01-15 09:30:00' }, // 周一
+        { submit_time: '2024-01-15 14:20:00' }, // 周一
+        { submit_time: '2024-01-16 10:15:00' }, // 周二
+        { submit_time: '2024-01-16 16:45:00' }, // 周二
+        { submit_time: '2024-01-16 20:30:00' }, // 周二
+        { submit_time: '2024-01-17 11:20:00' }, // 周三
+        { submit_time: '2024-01-17 15:10:00' }, // 周三
+        { submit_time: '2024-01-18 08:45:00' }, // 周四
+        { submit_time: '2024-01-18 13:30:00' }, // 周四
+        { submit_time: '2024-01-18 19:15:00' }, // 周四
+        { submit_time: '2024-01-19 09:00:00' }, // 周五
+        { submit_time: '2024-01-19 17:30:00' }, // 周五
+        { submit_time: '2024-01-20 10:45:00' }, // 周六
+        { submit_time: '2024-01-20 14:20:00' }, // 周六
+        { submit_time: '2024-01-20 18:00:00' }, // 周六
+        { submit_time: '2024-01-21 11:30:00' }, // 周日
+        { submit_time: '2024-01-21 15:45:00' }, // 周日
+        { submit_time: '2024-01-22 08:20:00' }, // 周一
+        { submit_time: '2024-01-22 12:10:00' }, // 周一
+        { submit_time: '2024-01-22 16:50:00' }  // 周一
+      ];
       submissions = mockSubmissions;
     }
     
@@ -1145,7 +1338,110 @@ const ReportGenerator = () => {
         </Row>
       </Card>
 
-      {/* 学生数据展示 */}
+      {/* NLP智能交互模块 */}
+      {showNlpModule && (
+        <Card
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Space>
+                <MessageOutlined />
+                <span>智能分析助手</span>
+                <Tag color="blue">学生ID: {selectedStudent}</Tag>
+              </Space>
+              <Select 
+                value={modelType} 
+                onChange={setModelType} 
+                style={{ width: 200 }}
+                size="small"
+              >
+                <Option value="backend">后端NLP服务</Option>
+                <Option value="deepseek">本地Deepseek模型</Option>
+              </Select>
+            </div>
+          }
+          style={{ marginBottom: '24px' }}
+        >
+          <div style={{ marginBottom: '16px' }}>
+            <Alert
+              message="智能分析助手已激活"
+              description="您可以向AI助手询问关于当前学生的学习情况，获取个性化的分析建议。您的对话内容将作为上下文信息，帮助生成更精准的多模态AI报告。建议询问学习模式、问题诊断或改进建议等相关问题。"
+              type="info"
+              showIcon
+              style={{ marginBottom: '16px' }}
+            />
+          </div>
+          
+          {/* 消息列表 */}
+          <Card
+            style={{ 
+              height: '400px', 
+              marginBottom: '16px', 
+              display: 'flex', 
+              flexDirection: 'column' 
+            }}
+            bodyStyle={{ 
+              flex: 1, 
+              overflow: 'auto', 
+              padding: '12px 24px',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            <List
+              itemLayout="horizontal"
+              dataSource={nlpMessages}
+              style={{ flex: 1 }}
+              renderItem={(message) => (
+                <List.Item style={{ padding: '8px 0' }}>
+                  <List.Item.Meta
+                    avatar={
+                      message.type === 'user' ? 
+                      <UserOutlined style={{ fontSize: '24px', color: '#1890ff' }} /> : 
+                      <RobotOutlined style={{ fontSize: '24px', color: '#52c41a' }} />
+                    }
+                    title={message.type === 'user' ? '您' : 'AI助手'}
+                    description={renderNlpMessageContent(message)}
+                  />
+                </List.Item>
+              )}
+            />
+            <div ref={messagesEndRef} />
+            
+            {nlpLoading && (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <Spin tip="AI助手正在分析..." />
+              </div>
+            )}
+          </Card>
+          
+          {/* 输入框 */}
+          <div style={{ display: 'flex' }}>
+            <TextArea
+              value={nlpQuery}
+              onChange={(e) => setNlpQuery(e.target.value)}
+              placeholder={`向AI助手询问学生${selectedStudent}的学习情况...`}
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault();
+                  handleNlpSubmit();
+                }
+              }}
+              style={{ flex: 1, marginRight: 8 }}
+            />
+            <Button 
+              type="primary" 
+              icon={<SendOutlined />} 
+              onClick={handleNlpSubmit}
+              loading={nlpLoading}
+              style={{ height: 'auto' }}
+            >
+              发送
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {studentData && (
         <Card 
           title={

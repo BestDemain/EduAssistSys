@@ -340,6 +340,7 @@ def generate_multimodal_ai_report():
         knowledge_data = data.get('knowledge_data')
         behavior_data = data.get('behavior_data')
         difficulty_data = data.get('difficulty_data')
+        nlp_context = data.get('nlp_context', [])  # 新增NLP交互上下文
         
         if not student_id:
             return jsonify({
@@ -363,7 +364,8 @@ def generate_multimodal_ai_report():
             saved_charts=saved_charts,
             knowledge_data=knowledge_data,
             behavior_data=behavior_data,
-            difficulty_data=difficulty_data
+            difficulty_data=difficulty_data,
+            nlp_context=nlp_context  # 传递NLP上下文
         )
         
         return jsonify(result)

@@ -413,31 +413,30 @@ const BehaviorAnalysis = () => {
   const getWeekdayDistributionOption = () => {
     if (!behaviorData) return {};
     
-    // 如果提交数据为空，生成模拟数据用于D3可视化展示
+    // 如果提交数据为空，使用固定的模拟数据用于D3可视化展示
     if (submissionData.length === 0) {
-      const mockSubmissionData = [];
-      const now = new Date();
-      const knowledgePoints = ['数组', '链表', '树', '图', '动态规划', '贪心算法'];
-      
-      // 生成过去30天的模拟提交数据
-      for (let i = 0; i < 50; i++) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - Math.floor(Math.random() * 30));
-        date.setHours(Math.floor(Math.random() * 24));
-        date.setMinutes(Math.floor(Math.random() * 60));
-        
-        const formatDate = (date) => {
-          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:00`;
-        };
-        
-        mockSubmissionData.push({
-          submit_id: `mock-${i}`,
-          submit_time: formatDate(date),
-          knowledge: knowledgePoints[Math.floor(Math.random() * knowledgePoints.length)],
-          is_correct: Math.random() > 0.3,
-          time_consume: Math.floor(Math.random() * 300) + 10
-        });
-      }
+      const mockSubmissionData = [
+        { submit_id: 'mock-1', submit_time: '2024-01-15 09:30:00', knowledge: '数组', is_correct: true, time_consume: 120 },
+        { submit_id: 'mock-2', submit_time: '2024-01-15 14:20:00', knowledge: '链表', is_correct: false, time_consume: 180 },
+        { submit_id: 'mock-3', submit_time: '2024-01-16 10:15:00', knowledge: '树', is_correct: true, time_consume: 95 },
+        { submit_id: 'mock-4', submit_time: '2024-01-16 16:45:00', knowledge: '图', is_correct: true, time_consume: 200 },
+        { submit_id: 'mock-5', submit_time: '2024-01-16 20:30:00', knowledge: '动态规划', is_correct: false, time_consume: 250 },
+        { submit_id: 'mock-6', submit_time: '2024-01-17 11:20:00', knowledge: '贪心算法', is_correct: true, time_consume: 85 },
+        { submit_id: 'mock-7', submit_time: '2024-01-17 15:10:00', knowledge: '数组', is_correct: true, time_consume: 110 },
+        { submit_id: 'mock-8', submit_time: '2024-01-18 08:45:00', knowledge: '链表', is_correct: true, time_consume: 140 },
+        { submit_id: 'mock-9', submit_time: '2024-01-18 13:30:00', knowledge: '树', is_correct: false, time_consume: 190 },
+        { submit_id: 'mock-10', submit_time: '2024-01-18 19:15:00', knowledge: '图', is_correct: true, time_consume: 160 },
+        { submit_id: 'mock-11', submit_time: '2024-01-19 09:00:00', knowledge: '动态规划', is_correct: true, time_consume: 220 },
+        { submit_id: 'mock-12', submit_time: '2024-01-19 17:30:00', knowledge: '贪心算法', is_correct: false, time_consume: 175 },
+        { submit_id: 'mock-13', submit_time: '2024-01-20 10:45:00', knowledge: '数组', is_correct: true, time_consume: 90 },
+        { submit_id: 'mock-14', submit_time: '2024-01-20 14:20:00', knowledge: '链表', is_correct: true, time_consume: 130 },
+        { submit_id: 'mock-15', submit_time: '2024-01-20 18:00:00', knowledge: '树', is_correct: true, time_consume: 105 },
+        { submit_id: 'mock-16', submit_time: '2024-01-21 11:30:00', knowledge: '图', is_correct: false, time_consume: 240 },
+        { submit_id: 'mock-17', submit_time: '2024-01-21 15:45:00', knowledge: '动态规划', is_correct: true, time_consume: 195 },
+        { submit_id: 'mock-18', submit_time: '2024-01-22 08:20:00', knowledge: '贪心算法', is_correct: true, time_consume: 115 },
+        { submit_id: 'mock-19', submit_time: '2024-01-22 12:10:00', knowledge: '数组', is_correct: true, time_consume: 75 },
+        { submit_id: 'mock-20', submit_time: '2024-01-22 16:50:00', knowledge: '链表', is_correct: false, time_consume: 210 }
+      ];
       
       setSubmissionData(mockSubmissionData);
     }
