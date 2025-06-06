@@ -242,7 +242,7 @@ npm start
 
 ### 演示视频
 
-📹 **完整功能演示**：[Demo.mp4](./Demo/Demo.mp4)
+📹 **完整功能演示**：[Demo](https://www.bilibili.com/video/BV19gTTz5Eye/)
 
 观看演示视频，了解系统的完整功能和操作流程。
 
@@ -274,7 +274,7 @@ npm start
 
 #### AI报告生成
 
-见[Demo.mp4](./Demo/Demo.mp4)，选择学生，预览图表。
+见[Demo](https://www.bilibili.com/video/BV19gTTz5Eye/)，选择学生，预览图表。
 
 在等待图表绘制的过程中可以使用自然语言提问。
 
