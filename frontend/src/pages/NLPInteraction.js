@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Input, Button, Card, List, Typography, Spin, message, Divider, Select } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons';
+import { Input, Button, Card, List, Typography, Spin, message, Divider, Select, Form, Space, Collapse } from 'antd';
+import { SendOutlined, RobotOutlined, UserOutlined, SettingOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 
 const { TextArea } = Input;
 const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
+const { Panel } = Collapse;
 
 export default function NLPInteraction() {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modelType, setModelType] = useState('backend'); // 'backend' 或 'deepseek'
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
   const messagesEndRef = useRef(null);
 
   // 自动滚动到最新消息
@@ -52,8 +55,12 @@ export default function NLPInteraction() {
       let response;
       
       if (modelType === 'backend') {
-        // 使用后端NLP服务
-        response = await axios.post('/api/nlp/query', { query });
+        // 使用后端NLP服务，传递API配置
+        response = await axios.post('/api/nlp/query', { 
+          query,
+          api_key: apiKey,
+          base_url: baseUrl
+        });
         
         // 添加系统回复
         const systemMessage = { 
@@ -328,6 +335,37 @@ export default function NLPInteraction() {
           <li>"查看学生的学习行为模式"</li>
           <li>"生成一份PDF格式的知识点掌握报告"</li>
         </ul>
+        
+        {modelType === 'backend' && (
+          <Collapse style={{ marginTop: 16 }}>
+            <Panel header={<><SettingOutlined /> API配置</>} key="1">
+              <Form layout="vertical">
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Form.Item 
+                    label="API密钥" 
+                    help="留空将使用环境变量 OPENAI_API_KEY"
+                  >
+                    <Input.Password
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="请输入API密钥（可选）"
+                    />
+                  </Form.Item>
+                  <Form.Item 
+                    label="基础URL" 
+                    help="留空将使用环境变量 OPENAI_BASE_URL"
+                  >
+                    <Input
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="请输入基础URL（可选）"
+                    />
+                  </Form.Item>
+                </Space>
+              </Form>
+            </Panel>
+          </Collapse>
+        )}
       </Card>
       
       <Card

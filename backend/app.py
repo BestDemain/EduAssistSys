@@ -20,7 +20,7 @@ CORS(app)  # 启用跨域请求支持
 data_service = DataService()
 analysis_service = AnalysisService()
 report_service = ReportService()
-nlp_service = NLPService()
+# nlp_service 将在需要时动态创建
 template_service = TemplateService()
 ai_report_service = AIReportService()
 
@@ -180,6 +180,11 @@ def delete_report(report_id):
 def nlp_query():
     data = request.json
     query = data.get('query', '')
+    api_key = data.get('api_key')  # 从前端获取API密钥
+    base_url = data.get('base_url')  # 从前端获取基础URL
+    
+    # 创建NLPService实例，传入API配置
+    nlp_service = NLPService(api_key=api_key, base_url=base_url)
     result = nlp_service.process_query(query)
     return jsonify(result)
 

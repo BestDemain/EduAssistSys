@@ -1,138 +1,59 @@
 # 自然语言处理服务模块 - 负责处理自然语言查询
 
-import os
 import re
 import json
 import numpy as np
-from openai import OpenAI
-from transformers import BertTokenizer, BertModel
-# from sentence_transformers import SentenceTransformer
-import torch
-import pandas as pd
-import numpy as np
-from typing import List, Dict, Optional
-
 from services.data_service import DataService
 from services.analysis_service import AnalysisService
 from services.report_service import ReportService
 
-# API配置将通过参数传入或使用环境变量默认值
-
 class NLPService:
-    def __init__(self, api_key=None, base_url=None):
+    def __init__(self):
         self.data_service = DataService()
         self.analysis_service = AnalysisService()
         self.report_service = ReportService()
         
-        # API配置：优先使用传入参数，否则使用环境变量默认值
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
-        
-        # 初始化OpenAI客户端
-        self.client = None
-        if self.api_key and self.base_url:
-            self.client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url,
-            )
-
-        self.tokenizer = BertTokenizer.from_pretrained(r"models\bert-base-chinese") # 本地部署
-        self.model = BertModel.from_pretrained(r"models\bert-base-chinese") # 本地部署
-        self.feature_embeddings = self._precompute_feature_embeddings()
-
         # 定义关键词和对应的处理函数
         self.keywords = {
-            'knowledge': self._process_knowledge_query,
-            'behavior': self._process_behavior_query,
-            'difficulty': self._process_difficulty_query,
+            '知识点': self._process_knowledge_query,
+            '掌握': self._process_knowledge_query,
+            '学习行为': self._process_behavior_query,
+            '行为模式': self._process_behavior_query,
+            '题目难度': self._process_difficulty_query,
+            '不合理': self._process_difficulty_query,
+            '生成报告': self._process_report_query,
+            '报告': self._process_report_query
         }
-
-    def call_qwen_api(self, query: str, data) -> str:
-        """调用Qwen API生成分析报告"""
-        if not self.client:
-            return "API配置未设置，请在前端界面配置API密钥和基础URL，或设置环境变量OPENAI_API_KEY和OPENAI_BASE_URL"
-            
-        final_prompt = f"用户查询：{query}\n\n数据分析结果：{data}"
-        try:
-            completion = self.client.chat.completions.create(
-                model="qwen-plus",
-                messages=[
-                    {"role": "system", "content": "你是一位数据分析师，请根据具体数据进行分析"},
-                    {"role": "user", "content": final_prompt}
-                ],
-                temperature=0.7,
-                top_p=0.8,
-                extra_body={"enable_thinking": False}
-            )
-            return completion.choices[0].message.content.strip()
-        except Exception as e:
-            print(f"API调用异常: {str(e)}")
-            return "服务暂时不可用，请稍后重试"
-
+    
     def process_query(self, query):
         """处理自然语言查询
+        
         Args:
-            query: 用户的自然语言查询  
+            query: 用户的自然语言查询
+            
         Returns:
             查询结果
         """
         # 提取查询中的学生ID
         student_id = self._extract_student_id(query)
+        
         # 提取查询中的报告类型
-        report_type, process_func = self._extract_report_type(query)
+        report_type = self._extract_report_type(query)
+        
         # 提取查询中的报告格式
         format_type = self._extract_format_type(query)
+        
         # 根据关键词确定处理函数
-        try:
-            data_ans = process_func(query, student_id, report_type, format_type)
-            analysis_ans = self.call_qwen_api(query, data_ans['content'])
-            return {
-                'status': 'success',
-                'type': 'text',
-                'content': f"{data_ans['content']}{analysis_ans}"
-            }
-        except:
-            # 如果没有匹配的关键词，返回默认回复
-            return {
-                'status': 'success',
-                'type': 'text',
-                'content': '您好，我可以帮您分析知识点掌握情况、学习行为模式和题目难度，也可以生成分析报告。请告诉我您需要什么帮助？'
-            }
-
-    def _get_embedding(self, text):
-        """使用BERT生成文本嵌入（CLS标记+归一化）"""
-        try:
-            inputs = self.tokenizer(text, 
-                                  return_tensors="pt",
-                                  padding=True,
-                                  truncation=True,
-                                  max_length=512)
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-            # 使用CLS标记作为句子表征
-            last_hidden_state = outputs.last_hidden_state
-            cls_embedding = last_hidden_state[:, 0, :]
-            # 归一化处理
-            normalized = cls_embedding / torch.norm(cls_embedding, dim=1, keepdim=True)
-            return normalized.squeeze().cpu().numpy()
-        except Exception as e:
-            print(f"生成嵌入时发生错误：{str(e)}")
-            return np.zeros(self.model.config.hidden_size)
-    
-    def _precompute_feature_embeddings(self) -> dict:
-        """预计算所有特征的嵌入向量以提高检索速度"""
-        """更新特征描述生成逻辑"""
-        feature_texts = {
-            'knowledge': "知识点掌握分析 学习进度 正确率 薄弱环节",
-            'behavior': "学习行为分析 答题时间 活跃时段 行为模式", 
-            'difficulty': "题目难度评估 不合理题目 难度系数 正确率对比"
+        for keyword, process_func in self.keywords.items():
+            if keyword in query:
+                return process_func(query, student_id, report_type, format_type)
+        
+        # 如果没有匹配的关键词，返回默认回复
+        return {
+            'status': 'success',
+            'type': 'text',
+            'content': '您好，我可以帮您分析知识点掌握情况、学习行为模式和题目难度，也可以生成分析报告。请告诉我您需要什么帮助？'
         }
-        return {k: self._get_embedding(v) for k,v in feature_texts.items()}
-
-    def calculate_cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """计算两个向量的余弦相似度"""
-        return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
     
     def _extract_student_id(self, query):
         """从查询中提取学生ID"""
@@ -153,28 +74,16 @@ class NLPService:
         return None
     
     def _extract_report_type(self, query):
-        """基于语义相似度的报告类型识别"""
-        # 获取查询文本的嵌入
-        query_embed = self._get_embedding(query)
-        type_to_func = {
-            'knowledge': self._process_knowledge_query,
-            'behavior': self._process_behavior_query,
-            'difficulty': self._process_difficulty_query
-        }
-        # 计算与各报告类型的相似度
-        similarities = [
-            (report_type, self.calculate_cosine_similarity(query_embed, feat_embed))
-            for report_type, feat_embed in self.feature_embeddings.items()
-        ]
-        # 按相似度降序排序
-        sorted_types = sorted(similarities, key=lambda x: x[1], reverse=True)
-        # 返回最高相似度类型（阈值>0.6）
-        if sorted_types[0][1] > 0.6:
-            if sorted_types[0][0] in self.keywords:
-                report_type = sorted_types[0][0]
-                return report_type, type_to_func[report_type]  # 直接使用type_to_func映射
-        return "general", self._process_report_query
-
+        """从查询中提取报告类型"""
+        if '知识点' in query or '掌握' in query:
+            return 'knowledge'
+        elif '学习行为' in query or '行为模式' in query:
+            return 'behavior'
+        elif '题目难度' in query or '不合理' in query:
+            return 'difficulty'
+        else:
+            return 'general'
+    
     def _extract_format_type(self, query):
         """从查询中提取报告格式"""
         if 'PDF' in query or 'pdf' in query:
